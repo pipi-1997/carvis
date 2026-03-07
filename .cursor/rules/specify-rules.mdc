@@ -1,0 +1,45 @@
+---
+description: Project Development Guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# carvis Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-03-08
+
+## Constitution Constraints
+
+- Preserve `ChannelAdapter` and `AgentBridge` boundaries
+- Keep canonical run lifecycle state durable in Postgres and coordination in Redis
+- Allow only one active run per workspace; queue additional runs explicitly
+- Treat logging, admin visibility, retries, timeouts, and heartbeat handling as product behavior
+- Require contract and integration coverage for adapter, bridge, queue, delivery, and lifecycle changes
+- Default project specs and collaboration docs to Simplified Chinese; keep paths, commands, code IDs, and structured requirement IDs in their original form
+
+## Active Technologies
+
+- (main)
+
+## Project Structure
+
+```text
+apps/
+packages/
+tests/
+```
+
+## Commands
+
+# Add commands for 
+
+## Code Style
+
+: Follow standard conventions
+
+## Recent Changes
+
+- main: Added
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
