@@ -1,0 +1,13 @@
+{
+  "name": "@carvis/gateway",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@carvis/channel-feishu": "workspace:*",
+    "@carvis/core": "workspace:*",
+    "hono": "^4.12.5"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts"
+  }
+}

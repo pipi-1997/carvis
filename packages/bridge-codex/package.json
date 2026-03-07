@@ -1,0 +1,11 @@
+{
+  "name": "@carvis/bridge-codex",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@carvis/core": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

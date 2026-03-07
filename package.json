@@ -1,0 +1,23 @@
+{
+  "name": "carvis",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.9",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:gateway": "bun run --filter @carvis/gateway dev",
+    "dev:executor": "bun run --filter @carvis/executor dev",
+    "lint": "bunx tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "hono": "^4.7.2"
+  }
+}
