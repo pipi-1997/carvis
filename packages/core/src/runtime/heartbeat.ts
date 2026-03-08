@@ -1,3 +1,10 @@
+export interface HeartbeatDriver {
+  beat(runId: string, now?: number): void | Promise<void>;
+  clear(runId: string): void | Promise<void>;
+  findExpired(now?: number): string[] | Promise<string[]>;
+  hasRun(runId: string): boolean | Promise<boolean>;
+}
+
 export class HeartbeatMonitor {
   private readonly beats = new Map<string, number>();
   private readonly ttlMs: number;

@@ -16,7 +16,7 @@
 - Hono
 - PostgreSQL
 - Redis
-- Feishu webhook
+- Feishu websocket
 - Codex CLI
 
 ## 项目结构
@@ -30,9 +30,12 @@ tests/
 ## 常用命令
 
 - `bun test`
+- `bun run test:unit`
 - `bun run lint`
 - `bun run dev:gateway`
 - `bun run dev:executor`
+- `bun run start:gateway`
+- `bun run start:executor`
 
 ## 代码风格
 
@@ -43,8 +46,18 @@ tests/
 ## 最近变更
 
 - `001-feishu-codex-mvp`: 新增 Feishu + Codex 对话闭环设计与计划产物
+- `002-local-runtime-wiring`: 新增本地单机双进程 runtime wiring 设计与 planning 产物
 
 <!-- MANUAL ADDITIONS START -->
-- 当前实现已落地 `packages/core` 的内存仓储与 runtime 原语、`packages/channel-feishu` 验签与归一化、`packages/bridge-codex` 脚本化 bridge，以及 `apps/gateway` / `apps/executor` 的最小闭环。
+- 当前实现已落地本地单机双进程 runtime wiring：`gateway` 暴露 `/healthz` 并接入 Feishu `websocket`，`executor` 接入真实启动期 readiness 与消费循环。
+- `packages/channel-feishu` 现在同时包含 webhook 归一化、runtime sender、websocket ingress、allowlist / mention 过滤。
+- `packages/bridge-codex` 现在同时包含测试用脚本化 transport 和默认的 `codex exec` CLI transport。
 - `/status` 当前返回固定 workspace、active run、最近一次请求是否排队以及前方队列长度；不返回完整队列列表。
+- 本地 runtime 约定从 `~/.carvis/config.json` 读取结构化配置，并从 `POSTGRES_URL`、`REDIS_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 读取环境相关信息。
+- `CONFIG_DRIFT` 通过 Redis 中共享的 runtime fingerprint 检测；出现漂移时 `gateway /healthz` 降级，`executor` 拒绝消费。
+- 本机验证结果：
+  - `bun run lint`
+  - `bun test`
+  - `codex --version`
+  - 当前机器未安装 `postgres` / `redis-server`，因此真实外部依赖启动需要操作者自行准备。
 <!-- MANUAL ADDITIONS END -->

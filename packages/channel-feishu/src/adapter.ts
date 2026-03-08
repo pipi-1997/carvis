@@ -18,6 +18,8 @@ interface FeishuWebhookPayload {
 }
 
 interface FeishuSender {
+  addReaction(messageId: string, emojiType: string): Promise<void>;
+  removeReaction(messageId: string, emojiType: string): Promise<void>;
   sendMessage(message: OutboundMessage): Promise<{ messageId: string }>;
 }
 
@@ -69,6 +71,14 @@ export class FeishuAdapter {
 
   async sendMessage(message: OutboundMessage): Promise<{ messageId: string }> {
     return this.sender.sendMessage(message);
+  }
+
+  async addReaction(messageId: string, emojiType: string): Promise<void> {
+    await this.sender.addReaction(messageId, emojiType);
+  }
+
+  async removeReaction(messageId: string, emojiType: string): Promise<void> {
+    await this.sender.removeReaction(messageId, emojiType);
   }
 }
 

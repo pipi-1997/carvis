@@ -1,12 +1,10 @@
-import type { AgentConfig, OutboundMessage, Session } from "@carvis/core";
-import type { RepositoryBundle } from "@carvis/core";
-import type { CancelSignalStore } from "@carvis/core";
+import type { AgentConfig, CancelSignalDriver, OutboundMessage, RepositoryBundle, Session } from "@carvis/core";
 
 export async function handleAbortCommand(input: {
   session: Session;
   agentConfig: AgentConfig;
   repositories: RepositoryBundle;
-  cancelSignals: CancelSignalStore;
+  cancelSignals: CancelSignalDriver;
   now?: () => Date;
 }): Promise<OutboundMessage> {
   const activeRun = await input.repositories.runs.findActiveRunByWorkspace(input.agentConfig.workspace);

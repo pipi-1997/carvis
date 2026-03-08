@@ -80,12 +80,31 @@ export function createHarness(options?: {
   const heartbeats = new HeartbeatMonitor({
     ttlMs: options?.heartbeatTtlMs ?? 1_000,
   });
+  const reactionOperations: Array<{
+    action: "add" | "remove";
+    emojiType: string;
+    messageId: string;
+  }> = [];
   const adapter = new FeishuAdapter({
     signingSecret: "test-secret",
     sender: {
       sendMessage: async () => ({
         messageId: `delivery-${Math.random().toString(36).slice(2, 10)}`,
       }),
+      addReaction: async (messageId: string, emojiType: string) => {
+        reactionOperations.push({
+          action: "add",
+          emojiType,
+          messageId,
+        });
+      },
+      removeReaction: async (messageId: string, emojiType: string) => {
+        reactionOperations.push({
+          action: "remove",
+          emojiType,
+          messageId,
+        });
+      },
     },
   });
   const notifier = createRunNotifier({
@@ -186,6 +205,7 @@ export function createHarness(options?: {
     notifier,
     postFeishuText,
     queue,
+    reactionOperations,
     reaper,
     repositories,
     workspaceLocks,

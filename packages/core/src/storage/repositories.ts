@@ -344,7 +344,10 @@ export function createInMemoryRepositories(): RepositoryBundle {
 export function createPostgresRepositories(client: PostgresClient): RepositoryBundle {
   const sessions: SessionRepository = {
     async getSessionById(sessionId) {
-      const result = await client.query<Session>("SELECT * FROM sessions WHERE id = $1 LIMIT 1", [sessionId]);
+      const result = await client.query<Session>(
+        "SELECT id, channel, chat_id AS \"chatId\", agent_id AS \"agentId\", workspace, status, last_seen_at AS \"lastSeenAt\" FROM sessions WHERE id = $1 LIMIT 1",
+        [sessionId],
+      );
       return result.rows[0] ?? null;
     },
     async getOrCreateSession({ channel, chatId, agentConfig, now }) {

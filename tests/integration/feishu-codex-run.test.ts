@@ -15,9 +15,18 @@ describe("Feishu -> Codex run flow", () => {
     const deliveries = await harness.repositories.deliveries.listDeliveries();
     const contents = deliveries.map((delivery) => delivery.content);
 
-    expect(contents.some((content) => content.includes("已排队"))).toBeTrue();
-    expect(contents.some((content) => content.includes("已开始"))).toBeTrue();
-    expect(contents.some((content) => content.includes("正在分析仓库"))).toBeTrue();
-    expect(contents.some((content) => content.includes("仓库目标已总结"))).toBeTrue();
+    expect(contents).toEqual(["仓库目标已总结"]);
+    expect(harness.reactionOperations).toEqual([
+      {
+        action: "add",
+        emojiType: "OK",
+        messageId: "msg-001",
+      },
+      {
+        action: "remove",
+        emojiType: "OK",
+        messageId: "msg-001",
+      },
+    ]);
   });
 });

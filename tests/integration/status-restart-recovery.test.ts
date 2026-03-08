@@ -17,6 +17,8 @@ describe("restart recovery", () => {
     const adapter = new FeishuAdapter({
       signingSecret: "test-secret",
       sender: {
+        addReaction: async () => {},
+        removeReaction: async () => {},
         sendMessage: async () => ({ messageId: "delivery-restart" }),
       },
     });

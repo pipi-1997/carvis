@@ -1,3 +1,9 @@
+export interface WorkspaceLockDriver {
+  acquire(workspace: string, runId: string): boolean | Promise<boolean>;
+  getActiveRunId(workspace: string): string | null | Promise<string | null>;
+  release(workspace: string, runId: string): void | Promise<void>;
+}
+
 export class WorkspaceLockManager {
   private readonly locks = new Map<string, string>();
 
@@ -24,7 +30,7 @@ export interface RedisLockClient {
   del(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
   pexpire(key: string, ttlMs: number): Promise<number>;
-  set(key: string, value: string, mode: "NX"): Promise<"OK" | null>;
+  set(key: string, value: string, mode?: "NX"): Promise<"OK" | null>;
 }
 
 export class RedisWorkspaceLockManager {

@@ -1,5 +1,5 @@
-import type { HeartbeatMonitor } from "@carvis/core";
+import type { HeartbeatDriver } from "@carvis/core";
 
-export function renewRunHeartbeat(heartbeats: HeartbeatMonitor, runId: string, now = Date.now()) {
-  heartbeats.beat(runId, now);
+export async function renewRunHeartbeat(heartbeats: HeartbeatDriver, runId: string, now = Date.now()) {
+  await heartbeats.beat(runId, now);
 }

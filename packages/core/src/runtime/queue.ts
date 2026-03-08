@@ -1,3 +1,11 @@
+export interface QueueDriver {
+  aheadCount(workspace: string, runId: string, hasActiveRun: boolean): number | Promise<number>;
+  dequeue(workspace: string): string | null | Promise<string | null>;
+  enqueue(workspace: string, runId: string): number | Promise<number>;
+  length(workspace: string): number | Promise<number>;
+  remove(workspace: string, runId: string): void | Promise<void>;
+}
+
 export class RunQueue {
   private readonly queues = new Map<string, string[]>();
 

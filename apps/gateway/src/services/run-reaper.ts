@@ -1,27 +1,26 @@
-import type { CancelSignalStore, RepositoryBundle, RunEvent } from "@carvis/core";
-import type { HeartbeatMonitor, RunQueue, WorkspaceLockManager } from "@carvis/core";
+import type { CancelSignalDriver, HeartbeatDriver, QueueDriver, RepositoryBundle, RunEvent, WorkspaceLockDriver } from "@carvis/core";
 
 export function createRunReaper(input: {
   repositories: RepositoryBundle;
-  heartbeats: HeartbeatMonitor;
-  queue: RunQueue;
-  workspaceLocks: WorkspaceLockManager;
+  heartbeats: HeartbeatDriver;
+  queue: QueueDriver;
+  workspaceLocks: WorkspaceLockDriver;
   notifier: {
     notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
   };
-  cancelSignals?: CancelSignalStore;
+  cancelSignals?: CancelSignalDriver;
   now?: () => Date;
 }) {
   const now = input.now ?? (() => new Date());
 
   return {
     async reapExpiredRuns() {
-      const expiredRunIds = input.heartbeats.findExpired(now().getTime());
+      const expiredRunIds = await input.heartbeats.findExpired(now().getTime());
 
       for (const runId of expiredRunIds) {
         const run = await input.repositories.runs.getRunById(runId);
         if (!run || run.status !== "running") {
-          input.heartbeats.clear(runId);
+          await input.heartbeats.clear(runId);
           continue;
         }
 
@@ -42,8 +41,8 @@ export function createRunReaper(input: {
           await input.notifier.notifyRunEvent(session, event);
         }
         await input.cancelSignals?.requestCancellation(runId);
-        input.heartbeats.clear(runId);
-        input.workspaceLocks.release(run.workspace, runId);
+        await input.heartbeats.clear(runId);
+        await input.workspaceLocks.release(run.workspace, runId);
       }
     },
   };

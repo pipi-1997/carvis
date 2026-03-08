@@ -1,6 +1,8 @@
 import type { OutboundMessage, RepositoryBundle, RunEvent, Session } from "@carvis/core";
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
+const WORKING_REACTION_EMOJI = "OK";
+
 export function createRunNotifier(input: {
   adapter: FeishuAdapter;
   repositories: RepositoryBundle;
@@ -30,6 +32,23 @@ export function createRunNotifier(input: {
   }
 
   async function notifyRunEvent(session: Session, event: RunEvent) {
+    const run = await input.repositories.runs.getRunById(event.runId);
+
+    if (event.eventType === "run.queued") {
+      if (run?.triggerMessageId) {
+        await input.adapter.addReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
+      }
+      return;
+    }
+
+    if (event.eventType === "run.started" || event.eventType === "agent.summary") {
+      return;
+    }
+
+    if (run?.triggerMessageId) {
+      await input.adapter.removeReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
+    }
+
     const message = formatRunEventMessage(session.chatId, event);
     await sendMessage(message);
   }

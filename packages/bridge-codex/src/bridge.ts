@@ -18,10 +18,16 @@ interface BridgeHandle {
 
 export class CodexBridge {
   private readonly transport: CodexTransport;
+  private readonly healthcheckFn?: () => Promise<{ ok: true; message: string }>;
   private readonly now: () => Date;
   private readonly controllers = new Map<string, AbortController>();
 
-  constructor(options: { transport: CodexTransport; now?: () => Date }) {
+  constructor(options: {
+    healthcheck?: () => Promise<{ ok: true; message: string }>;
+    now?: () => Date;
+    transport: CodexTransport;
+  }) {
+    this.healthcheckFn = options.healthcheck;
     this.transport = options.transport;
     this.now = options.now ?? (() => new Date());
   }
@@ -106,7 +112,7 @@ export class CodexBridge {
   }
 
   async healthcheck(): Promise<{ ok: true; message: string }> {
-    return {
+    return this.healthcheckFn?.() ?? {
       ok: true,
       message: "codex bridge ready",
     };

@@ -1,5 +1,4 @@
-import type { AgentConfig, RepositoryBundle, Run, RunEvent } from "@carvis/core";
-import type { CancelSignalStore, HeartbeatMonitor } from "@carvis/core";
+import type { AgentConfig, CancelSignalDriver, HeartbeatDriver, RepositoryBundle, Run, RunEvent } from "@carvis/core";
 import type { CodexBridge } from "@carvis/bridge-codex";
 
 import { renewRunHeartbeat } from "./heartbeat.ts";
@@ -7,8 +6,8 @@ import { renewRunHeartbeat } from "./heartbeat.ts";
 export function createRunController(input: {
   agentConfig: AgentConfig;
   repositories: RepositoryBundle;
-  cancelSignals: CancelSignalStore;
-  heartbeats: HeartbeatMonitor;
+  cancelSignals: CancelSignalDriver;
+  heartbeats: HeartbeatDriver;
   bridge: CodexBridge;
   notifier: {
     notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
@@ -24,7 +23,7 @@ export function createRunController(input: {
         throw new Error(`session not found: ${run.sessionId}`);
       }
 
-      renewRunHeartbeat(input.heartbeats, run.id, now().getTime());
+      await renewRunHeartbeat(input.heartbeats, run.id, now().getTime());
 
       const handle = await input.bridge.startRun({
         id: run.id,
@@ -44,7 +43,7 @@ export function createRunController(input: {
 
       try {
         for await (const event of handle.streamEvents()) {
-          renewRunHeartbeat(input.heartbeats, run.id, now().getTime());
+          await renewRunHeartbeat(input.heartbeats, run.id, now().getTime());
           const current = await input.repositories.runs.getRunById(run.id);
           if (!current || current.status === "failed" || current.status === "completed" || current.status === "cancelled") {
             continue;
@@ -108,7 +107,7 @@ export function createRunController(input: {
         await input.notifier.notifyRunEvent(session, failedEvent);
       } finally {
         void cancelWatcher;
-        input.heartbeats.clear(run.id);
+        await input.heartbeats.clear(run.id);
         await input.cancelSignals.clear(run.id);
       }
     },

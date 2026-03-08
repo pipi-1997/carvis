@@ -1,4 +1,11 @@
-export class CancelSignalStore {
+export interface CancelSignalDriver {
+  clear(runId: string): Promise<void>;
+  isCancellationRequested(runId: string): Promise<boolean>;
+  requestCancellation(runId: string): Promise<void>;
+  waitForCancellation(runId: string): Promise<void>;
+}
+
+export class CancelSignalStore implements CancelSignalDriver {
   private readonly requested = new Set<string>();
   private readonly listeners = new Map<string, Array<() => void>>();
 
@@ -35,10 +42,10 @@ export class CancelSignalStore {
 export interface RedisCancelClient {
   del(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<unknown>;
+  set(key: string, value: string, mode?: "NX"): Promise<"OK" | null>;
 }
 
-export class RedisCancelSignalStore {
+export class RedisCancelSignalStore implements CancelSignalDriver {
   constructor(private readonly redis: RedisCancelClient, private readonly prefix = "carvis:cancel") {}
 
   private key(runId: string) {

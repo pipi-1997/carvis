@@ -1,5 +1,4 @@
-import type { AgentConfig, RepositoryBundle, RunQueue, Session } from "@carvis/core";
-import type { CancelSignalStore } from "@carvis/core";
+import type { AgentConfig, CancelSignalDriver, QueueDriver, RepositoryBundle, Session } from "@carvis/core";
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
 import { handleAbortCommand } from "../commands/abort.ts";
@@ -9,8 +8,8 @@ export function createFeishuWebhookHandler(input: {
   agentConfig: AgentConfig;
   adapter: FeishuAdapter;
   repositories: RepositoryBundle;
-  queue: RunQueue;
-  cancelSignals: CancelSignalStore;
+  queue: QueueDriver;
+  cancelSignals: CancelSignalDriver;
   allowlist: {
     isAllowed(input: { chatId: string; userId: string }): boolean;
   };
@@ -108,7 +107,7 @@ export function createFeishuWebhookHandler(input: {
       timeoutSeconds: input.agentConfig.timeoutSeconds,
       now: now(),
     });
-    const queuePosition = input.queue.enqueue(input.agentConfig.workspace, run.id) + (activeRun ? 1 : 0);
+    const queuePosition = (await input.queue.enqueue(input.agentConfig.workspace, run.id)) + (activeRun ? 1 : 0);
     await input.repositories.runs.updateQueuePosition(run.id, queuePosition);
     const queuedEvent = await input.repositories.events.appendEvent({
       runId: run.id,

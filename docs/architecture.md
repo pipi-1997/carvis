@@ -1,6 +1,6 @@
 # 架构图
 
-本文记录当前已落地的 `001-feishu-codex-mvp` 实现，而不是远期全量蓝图。当前范围只覆盖 `Feishu + Codex + 单 agent 固定 workspace`。
+本文记录当前已落地的 `001-feishu-codex-mvp` 和 `002-local-runtime-wiring` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime`。
 
 ## 1. 运行时拓扑（当前实现）
 
@@ -11,7 +11,8 @@ flowchart TB
     end
 
     subgraph Gateway["apps/gateway"]
-        GW_WEB["Webhook 处理器"]
+        GW_HTTP["Hono HTTP 服务\n/healthz"]
+        GW_WS["Feishu websocket ingress"]
         GW_ROUTE["会话与命令路由\n/status /abort / 普通消息"]
         GW_NOTIFY["通知服务"]
         GW_REAPER["Heartbeat Reaper"]
@@ -33,6 +34,7 @@ flowchart TB
     end
 
     subgraph Executor["apps/executor"]
+        EX_BOOT["启动与 readiness"]
         EX_QUEUE["运行任务消费者"]
         EX_LOCK["工作区锁管理器"]
         EX_CTRL["运行控制器\ncancel / timeout / heartbeat"]
@@ -46,9 +48,10 @@ flowchart TB
         CX["Codex CLI"]
     end
 
-    FS --> PKG_FS --> GW_WEB
+    FS --> PKG_FS --> GW_WS
+    GW_HTTP --> GW_ROUTE
+    GW_WS --> GW_ROUTE
 
-    GW_WEB --> GW_ROUTE
     GW_ROUTE --> CORE_DOMAIN
     GW_ROUTE --> CORE_RUNTIME
     GW_ROUTE --> CORE_STORE
@@ -58,7 +61,7 @@ flowchart TB
     CORE_STORE --> PG
     CORE_RUNTIME --> RD
 
-    RD --> EX_QUEUE
+    RD --> EX_BOOT --> EX_QUEUE
     EX_QUEUE --> EX_LOCK
     EX_LOCK --> EX_CTRL
     EX_CTRL --> BR_CX --> CX
@@ -69,6 +72,9 @@ flowchart TB
 
     PG --> GW_NOTIFY
     GW_NOTIFY --> PKG_FS --> FS
+
+    RD -. runtime fingerprint .-> GW_HTTP
+    RD -. runtime fingerprint .-> EX_BOOT
 ```
 
 ## 2. 请求与执行流程（当前实现）
@@ -79,7 +85,8 @@ sequenceDiagram
     participant U as 用户
     participant C as Feishu
     participant G as apps/gateway
-    participant A as FeishuAdapter
+    participant W as Feishu websocket ingress
+    participant A as FeishuAdapter / Sender
     participant P as Postgres
     participant R as Redis
     participant E as apps/executor
@@ -87,10 +94,8 @@ sequenceDiagram
     participant X as Codex CLI
 
     U->>C: 发送普通消息 /status /abort
-    C->>G: Webhook 请求
-    G->>A: verifyWebhook(request)
-    G->>A: parseInbound(request)
-    A-->>G: InboundEnvelope
+    C->>W: websocket 长连接事件
+    W-->>G: InboundEnvelope
 
     G->>G: 按 chat_id 路由 session
     G->>P: 持久化 Session / Run / RunEvent
@@ -105,16 +110,34 @@ sequenceDiagram
 
     E->>P: 持久化运行与事件
     E->>R: 写入 heartbeat / cancel / lock 状态
+    E->>R: 发布 executor runtime fingerprint
+    G->>R: 发布 gateway runtime fingerprint
     G->>G: reaper 检查 heartbeat 过期并标记失败
 
     G->>G: 组装状态、摘要与最终结果通知
-    G->>A: sendMessage() / editMessage()
+    G->>A: sendMessage()
+    E->>A: sendMessage()
     A-->>C: OutboundMessage
     C-->>U: 状态 / 结果 / 错误更新
 ```
 
-## 说明
+## 3. 本地运行时约束
+
+- `gateway` 与 `executor` 现在按双进程运行，统一从 `~/.carvis/config.json` 和环境变量读取运行时配置。
+- `packages/channel-feishu` 负责 websocket 握手、allowlist / mention 过滤和 `InboundEnvelope` 归一化；这些细节不泄漏到 queue / run-flow。
+- `packages/bridge-codex` 同时保留脚本化测试 transport 和真实 `codex exec` CLI transport。
+- `packages/core/src/runtime/runtime-factory.ts` 现在负责：
+  - 真实 Postgres / Redis 客户端装配
+  - migration 触发
+  - queue / lock / heartbeat / cancel 协调对象创建
+  - runtime fingerprint 发布与漂移检测
+- 当检测到 `CONFIG_DRIFT` 时：
+  - `gateway /healthz` 返回 `ready = false`
+  - `executor` 输出结构化 `CONFIG_DRIFT` 状态并拒绝进入 `consumer_active = true`
+
+## 4. 说明
 
 - 当前实现只包含 `packages/channel-feishu` 和 `packages/bridge-codex`，没有引入 Telegram、Claude Code、scheduler 或 admin UI。
-- `apps/gateway` 负责验签、allowlist、session 路由、命令处理、出站通知和 heartbeat reaper。
-- `apps/executor` 负责消费队列、获取工作区锁、驱动 Codex bridge、处理取消和维护 heartbeat。
+- `apps/gateway` 负责健康检查、Feishu websocket 入站、session 路由、命令处理、出站通知和 heartbeat reaper。
+- `apps/executor` 负责启动期 readiness、消费队列、获取工作区锁、驱动 Codex bridge、处理取消和维护 heartbeat。
+- 真实本地联调依赖本机可访问的 Postgres、Redis 和已登录的 `codex` CLI。

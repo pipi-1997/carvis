@@ -1,13 +1,13 @@
 import type { AgentConfig, RepositoryBundle, RunEvent } from "@carvis/core";
-import type { RunQueue, WorkspaceLockManager } from "@carvis/core";
+import type { QueueDriver, WorkspaceLockDriver } from "@carvis/core";
 
 import { createRunController } from "./run-controller.ts";
 
 export function createRunConsumer(input: {
   agentConfig: AgentConfig;
   repositories: RepositoryBundle;
-  queue: RunQueue;
-  workspaceLocks: WorkspaceLockManager;
+  queue: QueueDriver;
+  workspaceLocks: WorkspaceLockDriver;
   runController: ReturnType<typeof createRunController>;
   notifier: {
     notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
@@ -18,11 +18,13 @@ export function createRunConsumer(input: {
 
   return {
     async processNext(): Promise<boolean> {
-      if (input.workspaceLocks.getActiveRunId(input.agentConfig.workspace)) {
+      const activeRunId = input.workspaceLocks.getActiveRunId(input.agentConfig.workspace);
+      if ((activeRunId instanceof Promise ? await activeRunId : activeRunId)) {
         return false;
       }
 
-      const runId = input.queue.dequeue(input.agentConfig.workspace);
+      const dequeuedRunId = input.queue.dequeue(input.agentConfig.workspace);
+      const runId = dequeuedRunId instanceof Promise ? await dequeuedRunId : dequeuedRunId;
       if (!runId) {
         return false;
       }
@@ -32,9 +34,13 @@ export function createRunConsumer(input: {
         return false;
       }
 
-      const locked = input.workspaceLocks.acquire(run.workspace, run.id);
+      const acquireResult = input.workspaceLocks.acquire(run.workspace, run.id);
+      const locked = acquireResult instanceof Promise ? await acquireResult : acquireResult;
       if (!locked) {
-        input.queue.enqueue(run.workspace, run.id);
+        const enqueued = input.queue.enqueue(run.workspace, run.id);
+        if (enqueued instanceof Promise) {
+          await enqueued;
+        }
         return false;
       }
 
@@ -59,7 +65,10 @@ export function createRunConsumer(input: {
         await input.runController.execute(run);
         return true;
       } finally {
-        input.workspaceLocks.release(run.workspace, run.id);
+        const released = input.workspaceLocks.release(run.workspace, run.id);
+        if (released instanceof Promise) {
+          await released;
+        }
       }
     },
   };
