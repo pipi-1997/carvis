@@ -1,6 +1,13 @@
 import type { InboundEnvelope, OutboundMessage } from "@carvis/core";
 
 import { verifyFeishuSignature } from "./signature.ts";
+import type {
+  FeishuCardCompleteInput,
+  FeishuCardCreateInput,
+  FeishuCardCreateResult,
+  FeishuCardUpdateInput,
+  FeishuFallbackTerminalInput,
+} from "./runtime-sender.ts";
 
 interface FeishuWebhookPayload {
   event: {
@@ -19,8 +26,12 @@ interface FeishuWebhookPayload {
 
 interface FeishuSender {
   addReaction(messageId: string, emojiType: string): Promise<void>;
+  completeCard?(input: FeishuCardCompleteInput): Promise<void>;
+  createCard?(input: FeishuCardCreateInput): Promise<FeishuCardCreateResult>;
   removeReaction(messageId: string, emojiType: string): Promise<void>;
   sendMessage(message: OutboundMessage): Promise<{ messageId: string }>;
+  sendFallbackTerminal?(input: FeishuFallbackTerminalInput): Promise<{ messageId: string }>;
+  updateCard?(input: FeishuCardUpdateInput): Promise<void>;
 }
 
 export class FeishuAdapter {
@@ -77,8 +88,36 @@ export class FeishuAdapter {
     await this.sender.addReaction(messageId, emojiType);
   }
 
+  async completeCard(input: FeishuCardCompleteInput): Promise<void> {
+    if (!this.sender.completeCard) {
+      throw new Error("feishu sender does not support completeCard");
+    }
+    await this.sender.completeCard(input);
+  }
+
+  async createCard(input: FeishuCardCreateInput): Promise<FeishuCardCreateResult> {
+    if (!this.sender.createCard) {
+      throw new Error("feishu sender does not support createCard");
+    }
+    return this.sender.createCard(input);
+  }
+
   async removeReaction(messageId: string, emojiType: string): Promise<void> {
     await this.sender.removeReaction(messageId, emojiType);
+  }
+
+  async sendFallbackTerminal(input: FeishuFallbackTerminalInput): Promise<{ messageId: string }> {
+    if (!this.sender.sendFallbackTerminal) {
+      throw new Error("feishu sender does not support sendFallbackTerminal");
+    }
+    return this.sender.sendFallbackTerminal(input);
+  }
+
+  async updateCard(input: FeishuCardUpdateInput): Promise<void> {
+    if (!this.sender.updateCard) {
+      throw new Error("feishu sender does not support updateCard");
+    }
+    await this.sender.updateCard(input);
   }
 }
 

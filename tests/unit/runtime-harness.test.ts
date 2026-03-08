@@ -23,4 +23,17 @@ describe("runtime harness", () => {
     expect(harness.env.FEISHU_APP_ID).toBe("cli_test_app");
     expect(harness.env.POSTGRES_URL).toContain("carvis_test");
   });
+
+  test("支持注入过程卡片创建和更新失败开关", async () => {
+    const harness = await createRuntimeHarness({
+      presentation: {
+        failCardCreate: true,
+        failCardUpdate: true,
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+
+    expect(harness.env.CARVIS_FAIL_CARD_CREATE).toBe("1");
+    expect(harness.env.CARVIS_FAIL_CARD_UPDATE).toBe("1");
+  });
 });

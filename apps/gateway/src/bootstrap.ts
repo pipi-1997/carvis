@@ -14,6 +14,7 @@ import { createGatewayApp } from "./app.ts";
 import { handleAbortCommand } from "./commands/abort.ts";
 import { handleStatusCommand } from "./commands/status.ts";
 import { createAllowlistGuard } from "./security/allowlist.ts";
+import { createPresentationOrchestrator } from "./services/presentation-orchestrator.ts";
 import { createRunNotifier } from "./services/run-notifier.ts";
 import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
@@ -65,13 +66,22 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
   const sender = createFeishuRuntimeSender({
     appId: services.config.secrets.feishuAppId,
     appSecret: services.config.secrets.feishuAppSecret,
+    failCardCreate: options.env?.CARVIS_FAIL_CARD_CREATE === "1",
+    failCardUpdate: options.env?.CARVIS_FAIL_CARD_UPDATE === "1",
   });
   const adapter = new FeishuAdapter({
     signingSecret: services.config.secrets.feishuAppSecret,
     sender,
   });
+  const presentationOrchestrator = createPresentationOrchestrator({
+    logger: services.logger,
+    now: () => new Date(),
+    repositories: services.repositories,
+    sender: adapter,
+  });
   const notifier = createRunNotifier({
     adapter,
+    presentationOrchestrator,
     repositories: services.repositories,
   });
   const logGatewayState = () => {

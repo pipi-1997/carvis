@@ -21,6 +21,9 @@ type ExecutorStateInput = {
 
 export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
   return {
+    error(message: string, context?: Record<string, unknown>) {
+      baseLogger.error(message, context);
+    },
     executorState(status: RuntimeStatus, input: ExecutorStateInput) {
       const level = status === "failed" ? "error" : status === "degraded" ? "warn" : "info";
       baseLogger[level](`runtime.executor.${status}`, {
@@ -47,8 +50,14 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         errorMessage: input.errorMessage,
       });
     },
+    info(message: string, context?: Record<string, unknown>) {
+      baseLogger.info(message, context);
+    },
     listEntries() {
       return baseLogger.listEntries();
+    },
+    warn(message: string, context?: Record<string, unknown>) {
+      baseLogger.warn(message, context);
     },
   };
 }

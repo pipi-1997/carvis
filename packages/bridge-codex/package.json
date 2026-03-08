@@ -6,6 +6,7 @@
     "@carvis/core": "workspace:*"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./bridge": "./src/bridge.ts"
   }
 }

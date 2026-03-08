@@ -13,9 +13,11 @@ describe("Feishu -> Codex run flow", () => {
     await harness.executor.processNext();
 
     const deliveries = await harness.repositories.deliveries.listDeliveries();
-    const contents = deliveries.map((delivery) => delivery.content);
-
-    expect(contents).toEqual(["仓库目标已总结"]);
+    expect(deliveries.map((delivery) => delivery.deliveryKind)).toEqual([
+      "card_create",
+      "card_complete",
+    ]);
+    expect(deliveries[1]?.content).toContain("仓库目标已总结");
     expect(harness.reactionOperations).toEqual([
       {
         action: "add",
@@ -28,5 +30,6 @@ describe("Feishu -> Codex run flow", () => {
         messageId: "msg-001",
       },
     ]);
+    expect(harness.sentMessages).toEqual([]);
   });
 });

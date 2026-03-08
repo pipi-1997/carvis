@@ -22,8 +22,11 @@ describe("/abort integration", () => {
     const latestRun = (await harness.repositories.runs.listRuns()).at(-1);
     expect(latestRun?.status).toBe("cancelled");
 
-    const latestDelivery = (await harness.repositories.deliveries.listDeliveries()).at(-1);
-    expect(latestDelivery?.content).toContain("已取消");
+    const deliveries = await harness.repositories.deliveries.listDeliveries();
+    expect(deliveries.some((delivery) => delivery.content.includes("已发出取消请求"))).toBe(true);
+    expect(deliveries.some((delivery) => delivery.deliveryKind === "card_complete")).toBe(true);
+    expect(deliveries.some((delivery) => delivery.deliveryKind === "fallback_terminal")).toBe(false);
+    expect(deliveries.at(-1)?.content).toContain("cancel requested");
   });
 
   test("没有 active run 时返回明确提示", async () => {

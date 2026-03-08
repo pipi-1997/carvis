@@ -1,4 +1,4 @@
-import type { AgentConfig, CancelSignalDriver, QueueDriver, RepositoryBundle, Session } from "@carvis/core";
+import type { AgentConfig, CancelSignalDriver, OutboundMessage, QueueDriver, RepositoryBundle, Session } from "@carvis/core";
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
 import { handleAbortCommand } from "../commands/abort.ts";
@@ -15,7 +15,7 @@ export function createFeishuWebhookHandler(input: {
   };
   notifier: {
     notifyRunEvent(session: Session, event: Awaited<ReturnType<RepositoryBundle["events"]["appendEvent"]>>): Promise<void>;
-    sendMessage(message: { chatId: string; runId: string | null; kind: "status" | "result" | "error"; content: string }): Promise<void>;
+    sendMessage(message: OutboundMessage): Promise<void>;
   };
   now?: () => Date;
 }) {

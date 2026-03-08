@@ -61,9 +61,13 @@ describe("local runtime e2e", () => {
     const latestRun = await shared.services.repositories.runs.getLatestRunByChat("feishu", "chat-001");
     const deliveries = await shared.services.repositories.deliveries.listDeliveries();
     const contents = deliveries.map((delivery) => delivery.content);
+    const deliveryKinds = deliveries.map((delivery) => delivery.deliveryKind);
 
     expect(latestRun?.status).toBe("completed");
-    expect(contents).toContain("变更摘要已输出");
+    expect(contents.some((content) => content.includes("变更摘要已输出"))).toBe(true);
+    expect(deliveryKinds).toEqual(
+      expect.arrayContaining(["card_create", "status"]),
+    );
     expect(contents.some((content) => content.includes("最近运行状态: completed"))).toBe(true);
     expect(contents.some((content) => content.includes("前方队列长度: 0"))).toBe(true);
     expect(contents).toContain("当前没有活动运行");

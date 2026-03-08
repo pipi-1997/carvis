@@ -56,7 +56,7 @@ export function createRunController(input: {
             now: now(),
           });
 
-          if (event.eventType === "agent.summary") {
+          if (event.eventType === "agent.summary" || event.eventType === "agent.output.delta") {
             await input.notifier.notifyRunEvent(session, event);
             continue;
           }

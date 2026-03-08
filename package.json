@@ -12,6 +12,7 @@
     "dev:executor": "bun run --filter @carvis/executor dev",
     "start:gateway": "bun run --filter @carvis/gateway dev",
     "start:executor": "bun run --filter @carvis/executor dev",
+    "test:003": "bun test tests/unit/presentation-setup.test.ts tests/unit/runtime-harness.test.ts",
     "test:unit": "bun test tests/unit",
     "lint": "bunx tsc --noEmit",
     "test": "bun test"

@@ -140,4 +140,214 @@ describe("feishu runtime sender", () => {
     expect(requests[3]?.url).toContain("/im/v1/messages/om_test_message/reactions/reaction-001");
     expect(requests[3]?.method).toBe("DELETE");
   });
+
+  test("发送运行中 interactive 卡片、更新输出区域并切换为终态摘要卡", async () => {
+    const requests: Array<{ url: string; method: string; body: string | undefined }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 2) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                message_id: "om_card_1",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 3) {
+          return new Response(
+            JSON.stringify({
+              code: 0,
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            code: 0,
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const created = await sender.createCard({
+      chatId: "oc_test_chat",
+      runId: "run-1",
+      title: "运行中",
+      body: "正在处理",
+    });
+    await sender.updateCard({
+      cardId: created.cardId,
+      elementId: created.elementId,
+      runId: "run-1",
+      text: "最新输出",
+    });
+    await sender.completeCard({
+      cardId: created.cardId,
+      elementId: created.elementId,
+      runId: "run-1",
+      status: "completed",
+      title: "运行已完成",
+      body: "**状态**：已完成",
+    });
+
+    expect(created).toEqual({
+      messageId: "om_card_1",
+      cardId: "om_card_1",
+      elementId: "carvis-output",
+    });
+    expect(requests).toHaveLength(4);
+    expect(requests[1]?.url).toContain("/message/v4/send");
+    expect(JSON.parse(requests[1]?.body ?? "{}")).toEqual({
+      chat_id: "oc_test_chat",
+      msg_type: "interactive",
+      card: {
+        config: {
+          wide_screen_mode: true,
+        },
+        elements: [
+          {
+            content: "正在处理",
+            element_id: "carvis-output",
+            tag: "markdown",
+          },
+        ],
+        header: {
+          template: "blue",
+          title: {
+            content: "运行中",
+            tag: "plain_text",
+          },
+        },
+      },
+    });
+    expect(requests[2]?.url).toContain("/im/v1/messages/om_card_1");
+    expect(requests[2]?.method).toBe("PATCH");
+    const updatePayload = JSON.parse(requests[2]?.body ?? "{}");
+    expect(JSON.parse(updatePayload.content)).toEqual({
+      config: {
+        wide_screen_mode: true,
+      },
+      elements: [
+        {
+          content: "最新输出",
+          element_id: "carvis-output",
+          tag: "markdown",
+        },
+      ],
+      header: {
+        template: "blue",
+        title: {
+          content: "运行中",
+          tag: "plain_text",
+        },
+      },
+    });
+    expect(requests[3]?.url).toContain("/im/v1/messages/om_card_1");
+    expect(requests[3]?.method).toBe("PATCH");
+    const completePayload = JSON.parse(requests[3]?.body ?? "{}");
+    expect(JSON.parse(completePayload.content)).toEqual({
+      config: {
+        wide_screen_mode: true,
+      },
+      elements: [
+        {
+          content: "**状态**：已完成",
+          element_id: "carvis-output",
+          tag: "markdown",
+        },
+      ],
+      header: {
+        template: "green",
+        title: {
+          content: "运行已完成",
+          tag: "plain_text",
+        },
+      },
+    });
+  });
+
+  test("发送结构化 post 富文本结果", async () => {
+    const requests: Array<{ url: string; method: string; body: string | undefined }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              message_id: "om_post_1",
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await sender.sendFallbackTerminal({
+      chatId: "oc_test_chat",
+      runId: "run-1",
+      title: "结果摘要",
+      content: "结论\n- 已完成",
+    });
+
+    expect(result).toEqual({ messageId: "om_post_1" });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.url).toContain("/message/v4/send");
+    expect(JSON.parse(requests[1]?.body ?? "{}")).toEqual({
+      chat_id: "oc_test_chat",
+      msg_type: "post",
+      content: {
+        post: {
+          zh_cn: {
+            content: [
+              [
+                {
+                  tag: "text",
+                  text: "结论\n- 已完成",
+                },
+              ],
+            ],
+            title: "结果摘要",
+          },
+        },
+      },
+    });
+  });
 });

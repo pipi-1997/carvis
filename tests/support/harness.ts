@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { createExecutorWorker } from "../../apps/executor/src/worker.ts";
 import { createGatewayApp } from "../../apps/gateway/src/app.ts";
 import { createAllowlistGuard } from "../../apps/gateway/src/security/allowlist.ts";
+import { createPresentationOrchestrator } from "../../apps/gateway/src/services/presentation-orchestrator.ts";
 import { createRunNotifier } from "../../apps/gateway/src/services/run-notifier.ts";
 import { createRunReaper } from "../../apps/gateway/src/services/run-reaper.ts";
 import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
-import type { AgentConfig, RunStatus } from "../../packages/core/src/domain/models.ts";
+import type { AgentConfig, OutboundMessage, RunStatus } from "../../packages/core/src/domain/models.ts";
 import { createInMemoryRepositories } from "../../packages/core/src/storage/repositories.ts";
 import { CancelSignalStore } from "../../packages/core/src/runtime/cancel-signal.ts";
 import { HeartbeatMonitor } from "../../packages/core/src/runtime/heartbeat.ts";
@@ -40,6 +41,7 @@ export function createSignedHeaders(
 
 export function createFeishuPayload(text: string, overrides?: Partial<Record<string, string>>) {
   const chatId = overrides?.chat_id ?? "chat-001";
+  const chatType = overrides?.chat_type ?? "group";
   const messageId = overrides?.message_id ?? "msg-001";
   const userId = overrides?.user_id ?? "user-001";
 
@@ -56,7 +58,7 @@ export function createFeishuPayload(text: string, overrides?: Partial<Record<str
       message: {
         message_id: messageId,
         chat_id: chatId,
-        chat_type: "group",
+        chat_type: chatType,
         message_type: "text",
         content: JSON.stringify({
           text,
@@ -70,6 +72,10 @@ export function createHarness(options?: {
   transportScript?: Parameters<typeof createScriptedCodexTransport>[0];
   heartbeatTtlMs?: number;
   allowChatIds?: string[];
+  presentation?: {
+    failCardCreate?: boolean;
+    failCardUpdate?: boolean;
+  };
 }) {
   let currentTime = Date.parse("2026-03-08T00:00:00.000Z");
   const now = () => new Date(currentTime);
@@ -85,12 +91,114 @@ export function createHarness(options?: {
     emojiType: string;
     messageId: string;
   }> = [];
+  const sentMessages: OutboundMessage[] = [];
+  const presentationOperations: Array<
+    | {
+        action: "create-card";
+        body: string;
+        chatId: string;
+        runId: string;
+        title: string;
+      }
+    | {
+        action: "complete-card";
+        body: string;
+        cardId: string;
+        elementId: string;
+        runId: string;
+        status: "completed" | "failed" | "cancelled";
+        title: string;
+      }
+    | {
+        action: "update-card";
+        cardId: string;
+        elementId: string;
+        runId: string;
+        text: string;
+      }
+    | {
+        action: "send-fallback-terminal";
+        chatId: string;
+        content: string;
+        runId: string;
+        title: string;
+      }
+  > = [];
+  const presentationSender = {
+    async completeCard(input: {
+      cardId: string;
+      elementId: string;
+      runId: string;
+      status: "completed" | "failed" | "cancelled";
+      title: string;
+      body: string;
+    }) {
+      if (options?.presentation?.failCardUpdate) {
+        throw new Error("presentation complete failed");
+      }
+      presentationOperations.push({
+        action: "complete-card",
+        body: input.body,
+        cardId: input.cardId,
+        elementId: input.elementId,
+        runId: input.runId,
+        status: input.status,
+        title: input.title,
+      });
+    },
+    async createCard(input: { chatId: string; runId: string; title: string; body: string }) {
+      if (options?.presentation?.failCardCreate) {
+        throw new Error("presentation create failed");
+      }
+      presentationOperations.push({
+        action: "create-card",
+        body: input.body,
+        chatId: input.chatId,
+        runId: input.runId,
+        title: input.title,
+      });
+
+      return {
+        cardId: `card-${presentationOperations.length}`,
+        elementId: `element-${presentationOperations.length}`,
+        messageId: `message-${presentationOperations.length}`,
+      };
+    },
+    async sendFallbackTerminal(input: { chatId: string; runId: string; title: string; content: string }) {
+      presentationOperations.push({
+        action: "send-fallback-terminal",
+        chatId: input.chatId,
+        content: input.content,
+        runId: input.runId,
+        title: input.title,
+      });
+
+      return {
+        messageId: `fallback-terminal-${presentationOperations.length}`,
+      };
+    },
+    async updateCard(input: { cardId: string; elementId: string; runId: string; text: string }) {
+      if (options?.presentation?.failCardUpdate) {
+        throw new Error("presentation update failed");
+      }
+      presentationOperations.push({
+        action: "update-card",
+        cardId: input.cardId,
+        elementId: input.elementId,
+        runId: input.runId,
+        text: input.text,
+      });
+    },
+  };
   const adapter = new FeishuAdapter({
     signingSecret: "test-secret",
     sender: {
-      sendMessage: async () => ({
-        messageId: `delivery-${Math.random().toString(36).slice(2, 10)}`,
-      }),
+      sendMessage: async (message: OutboundMessage) => {
+        sentMessages.push(message);
+        return {
+          messageId: `delivery-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      },
       addReaction: async (messageId: string, emojiType: string) => {
         reactionOperations.push({
           action: "add",
@@ -105,10 +213,19 @@ export function createHarness(options?: {
           messageId,
         });
       },
+      completeCard: presentationSender.completeCard,
+      createCard: presentationSender.createCard,
+      sendFallbackTerminal: presentationSender.sendFallbackTerminal,
+      updateCard: presentationSender.updateCard,
     },
+  });
+  const presentationOrchestrator = createPresentationOrchestrator({
+    repositories,
+    sender: presentationSender,
   });
   const notifier = createRunNotifier({
     adapter,
+    presentationOrchestrator,
     repositories,
   });
   const bridge = new CodexBridge({
@@ -204,10 +321,14 @@ export function createHarness(options?: {
     heartbeats,
     notifier,
     postFeishuText,
+    presentationOrchestrator,
+    presentationOperations,
+    presentationSender,
     queue,
     reactionOperations,
     reaper,
     repositories,
+    sentMessages,
     workspaceLocks,
     listRunStatuses,
     waitForHeartbeat,

@@ -26,6 +26,10 @@ type RuntimeConfigFixture = {
 type RuntimeHarnessOptions = {
   config?: Partial<RuntimeConfigFixture>;
   env?: Partial<Record<string, string>>;
+  presentation?: {
+    failCardCreate?: boolean;
+    failCardUpdate?: boolean;
+  };
 };
 
 type RuntimeHarness = {
@@ -115,6 +119,8 @@ export async function createRuntimeHarness(
     env: {
       ...DEFAULT_ENV,
       ...options.env,
+      ...(options.presentation?.failCardCreate ? { CARVIS_FAIL_CARD_CREATE: "1" } : {}),
+      ...(options.presentation?.failCardUpdate ? { CARVIS_FAIL_CARD_UPDATE: "1" } : {}),
       HOME: homeDir,
     },
     paths: {

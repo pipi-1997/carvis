@@ -1,6 +1,6 @@
 # carvis 开发指南
 
-根据所有 feature plan 自动生成。最后更新时间：2026-03-08
+根据所有 feature plan 自动生成。最后更新时间：2026-03-09
 
 ## 宪法约束
 
@@ -47,6 +47,7 @@ tests/
 
 - `001-feishu-codex-mvp`: 新增 Feishu + Codex 对话闭环设计与计划产物
 - `002-local-runtime-wiring`: 新增本地单机双进程 runtime wiring 设计与 planning 产物
+- `003-feishu-cardkit-results`: 新增 Feishu CardKit 单消息运行中卡片与终态富文本增强设计与 planning 产物
 
 <!-- MANUAL ADDITIONS START -->
 - 当前实现已落地本地单机双进程 runtime wiring：`gateway` 暴露 `/healthz` 并接入 Feishu `websocket`，`executor` 接入真实启动期 readiness 与消费循环。
@@ -60,4 +61,10 @@ tests/
   - `bun test`
   - `codex --version`
   - 当前机器未安装 `postgres` / `redis-server`，因此真实外部依赖启动需要操作者自行准备。
+- `003-feishu-cardkit-results` 当前实现状态：
+  - 普通消息保持 `OK` reaction 作为开始工作信号
+  - `run.started` 后创建运行中 `interactive` 卡片
+  - `agent.output.delta` 驱动输出窗口更新
+  - 已送达卡片在终态切换为同一条完成态摘要卡，不额外发送第二条成功消息
+  - 只有在卡片从未成功创建时才退化为单条终态富文本兜底消息
 <!-- MANUAL ADDITIONS END -->

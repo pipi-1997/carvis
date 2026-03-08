@@ -1,10 +1,8 @@
 import type {
   CancelSignalDriver,
   HeartbeatDriver,
-  OutboundMessage,
   QueueDriver,
   RepositoryBundle,
-  RunEvent,
   RuntimeConfig,
   WorkspaceLockDriver,
 } from "@carvis/core";
@@ -12,9 +10,9 @@ import { buildRuntimeScope, createRuntimeServices, detectRuntimeFingerprintDrift
 import { CodexBridge, codexCliHealthcheck, createCodexCliTransport, createScriptedCodexTransport } from "@carvis/bridge-codex";
 import { FeishuAdapter, createFeishuRuntimeSender } from "@carvis/channel-feishu";
 
+import { createPresentationOrchestrator } from "../../gateway/src/services/presentation-orchestrator.ts";
+import { createRunNotifier } from "../../gateway/src/services/run-notifier.ts";
 import { createExecutorWorker } from "./worker.ts";
-
-const WORKING_REACTION_EMOJI = "OK";
 
 type ExecutorRuntimeServicesLike = {
   cancelSignals: CancelSignalDriver;
@@ -64,39 +62,20 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
     sender: createFeishuRuntimeSender({
       appId: services.config.secrets.feishuAppId,
       appSecret: services.config.secrets.feishuAppSecret,
+      failCardCreate: options.env?.CARVIS_FAIL_CARD_CREATE === "1",
+      failCardUpdate: options.env?.CARVIS_FAIL_CARD_UPDATE === "1",
     }),
   });
-  const notifier = {
-    async notifyRunEvent(session: { chatId: string }, event: RunEvent) {
-      const run = await services.repositories.runs.getRunById(event.runId);
-
-      if (event.eventType === "run.started" || event.eventType === "agent.summary") {
-        return;
-      }
-
-      if (run?.triggerMessageId) {
-        await adapter.removeReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
-      }
-
-      const message = formatRunEventMessage(session.chatId, event);
-      const delivery = await services.repositories.deliveries.createDelivery({
-        runId: message.runId,
-        chatId: message.chatId,
-        deliveryKind: message.kind,
-        content: message.content,
-      });
-
-      try {
-        await adapter.sendMessage(message);
-        await services.repositories.deliveries.markDeliverySent(delivery.id);
-      } catch (error) {
-        await services.repositories.deliveries.markDeliveryFailed(
-          delivery.id,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    },
-  };
+  const presentationOrchestrator = createPresentationOrchestrator({
+    logger: services.logger,
+    repositories: services.repositories,
+    sender: adapter,
+  });
+  const notifier = createRunNotifier({
+    adapter,
+    presentationOrchestrator,
+    repositories: services.repositories,
+  });
   const worker = createExecutorWorker({
     agentConfig: services.config.agent,
     repositories: services.repositories,
@@ -123,52 +102,5 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
       await services.redis.close();
       await services.postgres.close();
     },
-  };
-}
-
-function formatRunEventMessage(chatId: string, event: RunEvent): OutboundMessage {
-  switch (event.eventType) {
-    case "run.started":
-      return {
-        chatId,
-        runId: event.runId,
-        kind: "status",
-        content: "已开始",
-      };
-    case "agent.summary":
-      return {
-        chatId,
-        runId: event.runId,
-        kind: "status",
-        content: String(event.payload.summary),
-      };
-    case "run.completed":
-      return {
-        chatId,
-        runId: event.runId,
-        kind: "result",
-        content: String(event.payload.result_summary),
-      };
-    case "run.failed":
-      return {
-        chatId,
-        runId: event.runId,
-        kind: "error",
-        content: `已失败: ${String(event.payload.failure_message)}`,
-      };
-    case "run.cancelled":
-      return {
-        chatId,
-        runId: event.runId,
-        kind: "status",
-        content: "已取消",
-      };
-  }
-
-  return {
-    chatId,
-    runId: event.runId,
-    kind: "status",
-    content: event.eventType,
   };
 }
