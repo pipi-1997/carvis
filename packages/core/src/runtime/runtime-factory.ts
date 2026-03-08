@@ -5,6 +5,7 @@ import {
 } from "../config/runtime-config.ts";
 import type { RuntimeConfig } from "../domain/runtime-models.ts";
 import { createRuntimeLogger } from "../observability/runtime-logger.ts";
+import { StructuredLogger, createConsoleLogSink } from "../observability/logger.ts";
 import { RedisHeartbeatMonitor } from "./heartbeat.ts";
 import { RedisRunQueue } from "./queue.ts";
 import { RedisCancelSignalStore } from "./cancel-signal.ts";
@@ -75,7 +76,11 @@ export async function createRuntimeDependencies<
       agentId: config.agent.id,
       env: options.env,
     }),
-    logger: createRuntimeLogger(),
+    logger: createRuntimeLogger(
+      new StructuredLogger({
+        sink: createConsoleLogSink(),
+      }),
+    ),
     postgres: await postgresFactory(config.secrets.postgresUrl),
     redis: await redisFactory(config.secrets.redisUrl),
   };

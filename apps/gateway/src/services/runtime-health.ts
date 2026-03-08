@@ -62,6 +62,13 @@ export function createGatewayRuntimeHealth(options: GatewayRuntimeHealthOptions)
       state.feishuIngressReady = value;
       recalculateReady();
     },
+    markFeishuDisconnected(message: string) {
+      state.feishuIngressReady = false;
+      setError({
+        code: "FEISHU_WS_DISCONNECTED",
+        message,
+      });
+    },
     markFailure(code: string, message: string) {
       setError({ code, message });
     },

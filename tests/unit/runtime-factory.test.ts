@@ -36,4 +36,41 @@ describe("runtime factory", () => {
     expect(runtime.redis.kind).toBe("redis");
     expect(runtime.logger.listEntries()).toEqual([]);
   });
+
+  test("真实 runtime logger 会镜像到终端", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+    const infoLogs: string[] = [];
+    const originalInfo = console.info;
+
+    console.info = (...args: unknown[]) => {
+      infoLogs.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      const runtime = await createRuntimeDependencies({
+        env: harness.env,
+        createPostgresClient: async (connectionString) => ({
+          kind: "postgres",
+          connectionString,
+        }),
+        createRedisClient: async (connectionString) => ({
+          kind: "redis",
+          connectionString,
+        }),
+      });
+
+      runtime.logger.executorState("ready", {
+        configFingerprint: runtime.configFingerprint,
+        postgresReady: true,
+        redisReady: true,
+        codexReady: true,
+        consumerActive: true,
+      });
+    } finally {
+      console.info = originalInfo;
+    }
+
+    expect(infoLogs.some((line) => line.includes("runtime.executor.ready"))).toBe(true);
+  });
 });

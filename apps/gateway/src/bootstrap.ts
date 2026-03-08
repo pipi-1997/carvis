@@ -2,6 +2,7 @@ import { FeishuAdapter, createFeishuRuntimeSender, createFeishuWebsocketIngress 
 import type {
   AgentConfig,
   CancelSignalDriver,
+  HeartbeatDriver,
   QueueDriver,
   RepositoryBundle,
   RuntimeConfig,
@@ -14,12 +15,14 @@ import { handleAbortCommand } from "./commands/abort.ts";
 import { handleStatusCommand } from "./commands/status.ts";
 import { createAllowlistGuard } from "./security/allowlist.ts";
 import { createRunNotifier } from "./services/run-notifier.ts";
+import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
 
 type GatewayRuntimeServicesLike = {
   cancelSignals: CancelSignalDriver;
   config: RuntimeConfig;
   configFingerprint: string;
+  heartbeats: HeartbeatDriver;
   logger: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   postgres: {
     close(): Promise<void>;
@@ -41,6 +44,9 @@ export type BootstrapGatewayRuntimeOptions = {
   createFeishuIngress?: ((
     options: Parameters<typeof createFeishuWebsocketIngress>[0],
   ) => Promise<ReturnType<typeof createFeishuWebsocketIngress>> | ReturnType<typeof createFeishuWebsocketIngress>);
+  createRunReaper?: (
+    input: Parameters<typeof createRunReaper>[0],
+  ) => ReturnType<typeof createRunReaper>;
   createRuntimeServices?: (options?: { env?: Record<string, string | undefined> }) => Promise<GatewayRuntimeServicesLike>;
   env?: Record<string, string | undefined>;
   transportFactory?: Parameters<typeof createFeishuWebsocketIngress>[0]["transportFactory"];
@@ -68,6 +74,15 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     adapter,
     repositories: services.repositories,
   });
+  const logGatewayState = () => {
+    services.logger.gatewayState(health.status(), {
+      configFingerprint: services.configFingerprint,
+      feishuReady: health.state.feishuReady,
+      feishuIngressReady: health.state.feishuIngressReady,
+      errorCode: health.state.lastError?.code,
+      errorMessage: health.state.lastError?.message,
+    });
+  };
   const runtimeHealth = {
     ...health,
     async refresh() {
@@ -86,6 +101,15 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
       }
     },
   };
+  const reaperFactory = options.createRunReaper ?? createRunReaper;
+  const reaper = reaperFactory({
+    repositories: services.repositories,
+    heartbeats: services.heartbeats,
+    queue: services.queue,
+    workspaceLocks: services.workspaceLocks,
+    notifier,
+    cancelSignals: services.cancelSignals,
+  });
   const app = createGatewayApp({
     agentConfig: services.config.agent,
     adapter,
@@ -103,6 +127,20 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     appSecret: services.config.secrets.feishuAppSecret,
     allowFrom: services.config.feishu.allowFrom,
     requireMention: services.config.feishu.requireMention,
+    onConnectionStateChange: (state) => {
+      if (state.status === "ready") {
+        health.markFeishuReady();
+        health.markFeishuIngressReady();
+        if (health.state.lastError?.code === "FEISHU_WS_DISCONNECTED") {
+          health.clearError();
+        }
+        logGatewayState();
+        return;
+      }
+
+      health.markFeishuDisconnected(state.message ?? "feishu websocket disconnected");
+      logGatewayState();
+    },
     onEnvelope: async (envelope) => {
       const session = await services.repositories.sessions.getOrCreateSession({
         channel: envelope.channel,
@@ -185,6 +223,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     health: runtimeHealth,
     ingress,
     notifier,
+    reaper,
     services,
     async publishFingerprint() {
       await publishRuntimeFingerprint(services.redis, runtimeScope, "gateway", services.configFingerprint);

@@ -59,11 +59,17 @@ export interface FeishuWebsocketIngress {
   stop(): Promise<void>;
 }
 
+export type FeishuWebsocketConnectionState = {
+  message?: string;
+  status: "disconnected" | "ready";
+};
+
 type CreateFeishuWebsocketIngressOptions = NormalizeFeishuWebsocketEventOptions & {
   appId: string;
   appSecret: string;
   handshakeTimeoutMs?: number;
   onEnvelope: (envelope: InboundEnvelope) => Promise<void>;
+  onConnectionStateChange?: (state: FeishuWebsocketConnectionState) => void;
   transportFactory?: FeishuWebsocketTransportFactory;
 };
 
@@ -72,6 +78,7 @@ type FeishuWebsocketTransportFactoryOptions = NormalizeFeishuWebsocketEventOptio
   appSecret: string;
   handshakeTimeoutMs: number;
   onEnvelope: (envelope: InboundEnvelope) => Promise<void>;
+  onConnectionStateChange?: (state: FeishuWebsocketConnectionState) => void;
 };
 
 export type FeishuWebsocketTransportFactory = (
@@ -195,10 +202,17 @@ export function createFeishuWebsocketSdkTransport(): FeishuWebsocketTransportFac
       onError(message) {
         if (message.includes("[ws]")) {
           latestWsError = message;
+          input.onConnectionStateChange?.({
+            status: "disconnected",
+            message,
+          });
         }
       },
       onInfo(message) {
         if (message.includes("ws client ready")) {
+          input.onConnectionStateChange?.({
+            status: "ready",
+          });
           readyResolver?.();
         }
       },

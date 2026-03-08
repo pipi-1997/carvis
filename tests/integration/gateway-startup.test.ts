@@ -111,6 +111,97 @@ describe("gateway startup", () => {
 
     expect(response.status).toBe(403);
   });
+
+  test("启动后调度 heartbeat reaper", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+
+    let scheduled: (() => Promise<void>) | undefined;
+    let scheduledMs = 0;
+    let reaped = 0;
+
+    const started = await startGateway({
+      env: harness.env,
+      createRuntimeServices: async () =>
+        createGatewayRuntimeServicesFixture({
+          logger: createRuntimeLogger(),
+        }),
+      createFeishuIngress: async () =>
+        createGatewayIngressFixture({
+          ready: true,
+        }),
+      createRunReaper: () => ({
+        reapExpiredRuns: async () => {
+          reaped += 1;
+        },
+      }),
+      serve: (options) => ({
+        port: Number(options.port),
+        stop() {},
+      }),
+      setIntervalFn: (callback, ms) => {
+        scheduled = async () => {
+          await callback();
+        };
+        scheduledMs = Number(ms);
+        return 1 as unknown as Timer;
+      },
+    });
+    cleanupCallbacks.push(started.stop);
+
+    expect(scheduledMs).toBe(1000);
+    if (!scheduled) {
+      throw new Error("expected gateway reaper to be scheduled");
+    }
+    await scheduled();
+    expect(reaped).toBe(1);
+  });
+
+  test("websocket 掉线后 healthz 降级", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+    let onConnectionStateChange:
+      | ((state: { message?: string; status: "disconnected" | "ready" }) => void)
+      | undefined;
+
+    const started = await startGateway({
+      env: harness.env,
+      createRuntimeServices: async () =>
+        createGatewayRuntimeServicesFixture({
+          logger: createRuntimeLogger(),
+        }),
+      createFeishuIngress: async (options) => {
+        onConnectionStateChange = options.onConnectionStateChange;
+        return createGatewayIngressFixture({
+          ready: true,
+        });
+      },
+      serve: (options) => ({
+        port: Number(options.port),
+        stop() {},
+      }),
+    });
+    cleanupCallbacks.push(started.stop);
+
+    onConnectionStateChange?.({
+      status: "disconnected",
+      message: "ws connect failed",
+    });
+
+    const response = await started.app.request("http://localhost/healthz");
+    const body = (await response.json()) as {
+      state: {
+        last_error: { code: string; message: string } | null;
+        ready: boolean;
+      };
+    };
+
+    expect(body.state.ready).toBe(false);
+    expect(body.state.last_error).toEqual({
+      code: "FEISHU_WS_DISCONNECTED",
+      message: "ws connect failed",
+    });
+  });
 });
 
 function createGatewayRuntimeServicesFixture(input: {

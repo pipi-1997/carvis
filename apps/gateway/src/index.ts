@@ -3,8 +3,11 @@ import { bootstrapGatewayRuntime, type BootstrapGatewayRuntimeOptions } from "./
 
 type StartGatewayOptions = {
   createFeishuIngress?: BootstrapGatewayRuntimeOptions["createFeishuIngress"];
+  createRunReaper?: BootstrapGatewayRuntimeOptions["createRunReaper"];
   createRuntimeServices?: BootstrapGatewayRuntimeOptions["createRuntimeServices"];
+  clearIntervalFn?: (timer: Timer) => void;
   env?: Record<string, string | undefined>;
+  reaperIntervalMs?: number;
   serve?: (options: {
     fetch: (request: Request) => Response | Promise<Response>;
     port: number;
@@ -12,12 +15,14 @@ type StartGatewayOptions = {
     port: number;
     stop?: () => void | Promise<void>;
   };
+  setIntervalFn?: (callback: () => void | Promise<void>, ms: number) => Timer;
   transportFactory?: BootstrapGatewayRuntimeOptions["transportFactory"];
 };
 
 export async function startGateway(options: StartGatewayOptions = {}) {
   const runtime = await bootstrapGatewayRuntime({
     createFeishuIngress: options.createFeishuIngress,
+    createRunReaper: options.createRunReaper,
     createRuntimeServices: options.createRuntimeServices,
     env: options.env,
     transportFactory: options.transportFactory,
@@ -38,6 +43,12 @@ export async function startGateway(options: StartGatewayOptions = {}) {
     port: runtime.services.config.gateway.port,
   });
   runtime.health.markHttpListening();
+  const setIntervalImpl = options.setIntervalFn ?? ((callback, ms) => setInterval(() => void callback(), ms));
+  const clearIntervalImpl = options.clearIntervalFn ?? clearInterval;
+  const reaperTimer = setIntervalImpl(
+    () => runtime.reaper.reapExpiredRuns(),
+    options.reaperIntervalMs ?? 1_000,
+  );
 
   runtime.services.logger.gatewayState(runtime.health.status(), {
     configFingerprint: runtime.services.configFingerprint,
@@ -56,6 +67,7 @@ export async function startGateway(options: StartGatewayOptions = {}) {
       return runtime.services.logger.listEntries();
     },
     async stop() {
+      clearIntervalImpl(reaperTimer);
       await runtime.stop();
       await server.stop?.();
     },
