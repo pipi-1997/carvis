@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "bun"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@carvis/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@carvis/core/*": [
+        "packages/core/src/*"
+      ],
+      "@carvis/channel-feishu": [
+        "packages/channel-feishu/src/index.ts"
+      ],
+      "@carvis/channel-feishu/*": [
+        "packages/channel-feishu/src/*"
+      ],
+      "@carvis/bridge-codex": [
+        "packages/bridge-codex/src/index.ts"
+      ],
+      "@carvis/bridge-codex/*": [
+        "packages/bridge-codex/src/*"
+      ]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}

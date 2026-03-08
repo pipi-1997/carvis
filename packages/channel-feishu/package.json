@@ -1,0 +1,12 @@
+{
+  "name": "@carvis/channel-feishu",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@carvis/core": "workspace:*",
+    "@larksuiteoapi/node-sdk": "^1.59.0"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
