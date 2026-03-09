@@ -1,10 +1,13 @@
 export type Channel = "feishu";
+export type ChatType = "private" | "group";
 export type SessionStatus = "active" | "disabled";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type SessionMode = "fresh" | "continuation";
 export type ConversationSessionBindingStatus = "unbound" | "bound" | "reset" | "invalidated" | "recovered";
 export type ConversationSessionRecoveryResult = "recovered" | "failed";
 export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
+export type WorkspaceBindingSource = "default" | "config" | "manual" | "created" | "unbound";
+export type WorkspaceProvisionSource = "default" | "config" | "template_created";
 export type ConversationSessionMemoryState =
   | "fresh"
   | "continued"
@@ -21,7 +24,7 @@ export type DeliveryKind =
   | "card_update"
   | "card_complete"
   | "fallback_terminal";
-export type CommandName = "status" | "abort" | "new" | null;
+export type CommandName = "status" | "abort" | "new" | "bind" | "help" | null;
 export type RunEventType =
   | "run.queued"
   | "run.started"
@@ -41,6 +44,7 @@ export type PresentationPhase =
 export interface AgentConfig {
   id: string;
   bridge: "codex";
+  defaultWorkspace: string;
   workspace: string;
   timeoutSeconds: number;
   maxConcurrent: number;
@@ -72,6 +76,24 @@ export interface ConversationSessionBinding {
   lastInvalidationReason: string | null;
   lastRecoveryAt: string | null;
   lastRecoveryResult: ConversationSessionRecoveryResult | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SessionWorkspaceBinding {
+  sessionId: string;
+  chatId: string;
+  workspaceKey: string;
+  bindingSource: Exclude<WorkspaceBindingSource, "unbound">;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceCatalogEntry {
+  workspaceKey: string;
+  workspacePath: string;
+  provisionSource: WorkspaceProvisionSource;
+  templateRef: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -176,12 +198,17 @@ export interface InboundEnvelope {
   channel: Channel;
   sessionKey: string;
   chatId: string;
+  chatType: ChatType;
   messageId: string;
   userId: string;
   triggerSource: "chat_message";
   command: CommandName;
+  commandArgs: string[];
+  unknownCommand: string | null;
   prompt: string | null;
   rawText: string;
+  conversationHint: string | null;
+  threadHint: string | null;
 }
 
 export interface OutboundMessage {
@@ -193,7 +220,9 @@ export interface OutboundMessage {
 
 export interface StatusSnapshot {
   agentId: string;
-  workspace: string;
+  workspace: string | null;
+  workspaceKey: string | null;
+  workspaceBindingSource: WorkspaceBindingSource;
   activeRun: Run | null;
   latestRun: Run | null;
   isLatestRunQueued: boolean;

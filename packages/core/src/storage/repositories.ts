@@ -15,6 +15,10 @@ import type {
   RunStatus,
   SessionMode,
   Session,
+  SessionWorkspaceBinding,
+  WorkspaceBindingSource,
+  WorkspaceCatalogEntry,
+  WorkspaceProvisionSource,
 } from "../domain/models.ts";
 
 function nowIso(now = new Date()) {
@@ -60,6 +64,29 @@ export interface ConversationSessionBindingRepository {
   }): Promise<ConversationSessionBinding>;
 }
 
+export interface SessionWorkspaceBindingRepository {
+  getBindingBySessionId(sessionId: string): Promise<SessionWorkspaceBinding | null>;
+  listBindings(): Promise<SessionWorkspaceBinding[]>;
+  saveBinding(input: {
+    session: Session;
+    workspaceKey: string;
+    bindingSource: Exclude<WorkspaceBindingSource, "unbound">;
+    now?: Date;
+  }): Promise<SessionWorkspaceBinding>;
+}
+
+export interface WorkspaceCatalogRepository {
+  getEntryByWorkspaceKey(workspaceKey: string): Promise<WorkspaceCatalogEntry | null>;
+  listEntries(): Promise<WorkspaceCatalogEntry[]>;
+  createEntry(input: {
+    workspaceKey: string;
+    workspacePath: string;
+    provisionSource: WorkspaceProvisionSource;
+    templateRef?: string | null;
+    now?: Date;
+  }): Promise<WorkspaceCatalogEntry>;
+}
+
 export interface RunRepository {
   createQueuedRun(input: {
     sessionId: string;
@@ -76,6 +103,7 @@ export interface RunRepository {
   updateQueuePosition(runId: string, queuePosition: number): Promise<Run>;
   getRunById(runId: string): Promise<Run | null>;
   listRuns(): Promise<Run[]>;
+  findActiveRunBySession(sessionId: string): Promise<Run | null>;
   findActiveRunByWorkspace(workspace: string): Promise<Run | null>;
   getLatestRunBySession(sessionId: string): Promise<Run | null>;
   getLatestRunByChat(channel: Session["channel"], chatId: string): Promise<Run | null>;
@@ -174,6 +202,8 @@ export interface PresentationRepository {
 export interface RepositoryBundle {
   sessions: SessionRepository;
   conversationSessionBindings: ConversationSessionBindingRepository;
+  sessionWorkspaceBindings: SessionWorkspaceBindingRepository;
+  workspaceCatalog: WorkspaceCatalogRepository;
   runs: RunRepository;
   events: RunEventRepository;
   deliveries: DeliveryRepository;
@@ -188,6 +218,8 @@ export function createInMemoryRepositories(): RepositoryBundle {
   const sessions = new Map<string, Session>();
   const sessionsByChat = new Map<string, string>();
   const conversationSessionBindings = new Map<string, ConversationSessionBinding>();
+  const sessionWorkspaceBindings = new Map<string, SessionWorkspaceBinding>();
+  const workspaceCatalog = new Map<string, WorkspaceCatalogEntry>();
   const runs = new Map<string, Run>();
   const runIdsBySession = new Map<string, string[]>();
   const events = new Map<string, Array<RunEvent<Record<string, unknown>>>>();
@@ -318,6 +350,55 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
   };
 
+  const sessionWorkspaceBindingRepository: SessionWorkspaceBindingRepository = {
+    async getBindingBySessionId(sessionId) {
+      return clone(sessionWorkspaceBindings.get(sessionId) ?? null);
+    },
+    async listBindings() {
+      return Array.from(sessionWorkspaceBindings.values()).map(clone);
+    },
+    async saveBinding({ session, workspaceKey, bindingSource, now }) {
+      const timestamp = nowIso(now);
+      const existing = sessionWorkspaceBindings.get(session.id);
+      const binding: SessionWorkspaceBinding = {
+        sessionId: session.id,
+        chatId: session.chatId,
+        workspaceKey,
+        bindingSource,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      sessionWorkspaceBindings.set(session.id, binding);
+      return clone(binding);
+    },
+  };
+
+  const workspaceCatalogRepository: WorkspaceCatalogRepository = {
+    async getEntryByWorkspaceKey(workspaceKey) {
+      return clone(workspaceCatalog.get(workspaceKey) ?? null);
+    },
+    async listEntries() {
+      return Array.from(workspaceCatalog.values()).map(clone);
+    },
+    async createEntry({ workspaceKey, workspacePath, provisionSource, templateRef, now }) {
+      const existing = workspaceCatalog.get(workspaceKey);
+      if (existing) {
+        return clone(existing);
+      }
+      const timestamp = nowIso(now);
+      const entry: WorkspaceCatalogEntry = {
+        workspaceKey,
+        workspacePath,
+        provisionSource,
+        templateRef: templateRef ?? null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      workspaceCatalog.set(workspaceKey, entry);
+      return clone(entry);
+    },
+  };
+
   const runRepository: RunRepository = {
     async createQueuedRun(input) {
       const run: Run = {
@@ -362,6 +443,12 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
     async listRuns() {
       return Array.from(runs.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(clone);
+    },
+    async findActiveRunBySession(sessionId) {
+      const run = Array.from(runs.values()).find(
+        (candidate) => candidate.sessionId === sessionId && candidate.status === "running",
+      );
+      return run ? clone(run) : null;
     },
     async findActiveRunByWorkspace(workspace) {
       const run = Array.from(runs.values()).find(
@@ -618,6 +705,8 @@ export function createInMemoryRepositories(): RepositoryBundle {
   return {
     sessions: sessionRepository,
     conversationSessionBindings: conversationSessionBindingRepository,
+    sessionWorkspaceBindings: sessionWorkspaceBindingRepository,
+    workspaceCatalog: workspaceCatalogRepository,
     runs: runRepository,
     events: eventRepository,
     deliveries: deliveryRepository,
@@ -628,6 +717,10 @@ export function createInMemoryRepositories(): RepositoryBundle {
 export function createPostgresRepositories(client: PostgresClient): RepositoryBundle {
   const selectConversationSessionBindingSql =
     'SELECT session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt" FROM conversation_session_bindings';
+  const selectSessionWorkspaceBindingSql =
+    'SELECT session_id AS "sessionId", chat_id AS "chatId", workspace_key AS "workspaceKey", binding_source AS "bindingSource", created_at AS "createdAt", updated_at AS "updatedAt" FROM session_workspace_bindings';
+  const selectWorkspaceCatalogSql =
+    'SELECT workspace_key AS "workspaceKey", workspace_path AS "workspacePath", provision_source AS "provisionSource", template_ref AS "templateRef", created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_catalog';
   const selectRunSql =
     'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
   const selectRunPresentationSql =
@@ -835,6 +928,70 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     },
   };
 
+  const sessionWorkspaceBindings: SessionWorkspaceBindingRepository = {
+    async getBindingBySessionId(sessionId) {
+      const result = await client.query<SessionWorkspaceBinding>(
+        `${selectSessionWorkspaceBindingSql} WHERE session_id = $1 LIMIT 1`,
+        [sessionId],
+      );
+      return result.rows[0] ?? null;
+    },
+    async listBindings() {
+      const result = await client.query<SessionWorkspaceBinding>(
+        `${selectSessionWorkspaceBindingSql} ORDER BY created_at ASC`,
+      );
+      return result.rows;
+    },
+    async saveBinding({ session, workspaceKey, bindingSource, now }) {
+      const timestamp = nowIso(now);
+      const result = await client.query<SessionWorkspaceBinding>(
+        `INSERT INTO session_workspace_bindings (
+          session_id, chat_id, workspace_key, binding_source, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (session_id) DO UPDATE SET
+          chat_id = EXCLUDED.chat_id,
+          workspace_key = EXCLUDED.workspace_key,
+          binding_source = EXCLUDED.binding_source,
+          updated_at = EXCLUDED.updated_at
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", workspace_key AS "workspaceKey", binding_source AS "bindingSource", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [session.id, session.chatId, workspaceKey, bindingSource, timestamp, timestamp],
+      );
+      return result.rows[0];
+    },
+  };
+
+  const workspaceCatalog: WorkspaceCatalogRepository = {
+    async getEntryByWorkspaceKey(workspaceKey) {
+      const result = await client.query<WorkspaceCatalogEntry>(
+        `${selectWorkspaceCatalogSql} WHERE workspace_key = $1 LIMIT 1`,
+        [workspaceKey],
+      );
+      return result.rows[0] ?? null;
+    },
+    async listEntries() {
+      const result = await client.query<WorkspaceCatalogEntry>(
+        `${selectWorkspaceCatalogSql} ORDER BY created_at ASC`,
+      );
+      return result.rows;
+    },
+    async createEntry({ workspaceKey, workspacePath, provisionSource, templateRef, now }) {
+      const timestamp = nowIso(now);
+      const result = await client.query<WorkspaceCatalogEntry>(
+        `INSERT INTO workspace_catalog (
+          workspace_key, workspace_path, provision_source, template_ref, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (workspace_key) DO UPDATE SET
+          workspace_path = EXCLUDED.workspace_path,
+          provision_source = EXCLUDED.provision_source,
+          template_ref = EXCLUDED.template_ref,
+          updated_at = EXCLUDED.updated_at
+        RETURNING workspace_key AS "workspaceKey", workspace_path AS "workspacePath", provision_source AS "provisionSource", template_ref AS "templateRef", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [workspaceKey, workspacePath, provisionSource, templateRef ?? null, timestamp, timestamp],
+      );
+      return result.rows[0];
+    },
+  };
+
   const runs: RunRepository = {
     async createQueuedRun(input) {
       const run: Run = {
@@ -903,6 +1060,13 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         `${selectRunSql} ORDER BY created_at ASC`,
       );
       return result.rows;
+    },
+    async findActiveRunBySession(sessionId) {
+      const result = await client.query<Run>(
+        `${selectRunSql} WHERE session_id = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
+        [sessionId],
+      );
+      return result.rows[0] ?? null;
     },
     async findActiveRunByWorkspace(workspace) {
       const result = await client.query<Run>(
@@ -1166,6 +1330,8 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
   return {
     sessions,
     conversationSessionBindings,
+    sessionWorkspaceBindings,
+    workspaceCatalog,
     runs,
     events,
     deliveries,

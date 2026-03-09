@@ -18,6 +18,7 @@ describe("gateway runtime health contract", () => {
       adapter: harness.adapter,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
       cancelSignals: harness.cancelSignals,
       allowlist: {
         isAllowed: () => true,
@@ -57,6 +58,7 @@ describe("gateway runtime health contract", () => {
       adapter: harness.adapter,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
       cancelSignals: harness.cancelSignals,
       allowlist: {
         isAllowed: () => true,

@@ -18,9 +18,10 @@
 - `payload.source`: 输出来源标识，例如 assistant / tool / system
 - `payload.sequence` 缺失或回退时，`gateway` 不得盲目覆盖已有过程卡片内容
 - `gateway` 可以对 delta 做节流、合并与结构恢复，但不得把本可表达为标题、列表、强调、代码块、路径或命令的内容统一提前拍平成单段纯文本
+- `channel-feishu` 必须把上游文本映射到飞书实际支持的卡片元素；对不稳定的 Markdown 标题语法需要做最小必要归一化
 
 ## 边界约束
 
 - `bridge-codex` 只负责规范事件产出，不直接感知 Feishu CardKit
-- `channel-feishu` 只负责消息和卡片发送，不直接感知 Codex 原始进程输出
+- `channel-feishu` 只负责消息和卡片发送，并负责把上游文本映射为飞书支持的 `interactive` 卡片结构；不直接感知 Codex 原始进程输出来源
 - `apps/gateway` 负责把规范事件映射为具体呈现动作，并记录降级、delivery 状态与单消息约束是否被破坏

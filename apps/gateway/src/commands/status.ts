@@ -1,26 +1,47 @@
-import type { AgentConfig, OutboundMessage, Session, StatusSnapshot } from "@carvis/core";
-import type { RepositoryBundle } from "@carvis/core";
-import type { QueueDriver } from "@carvis/core";
+import type { AgentConfig, ChatType, OutboundMessage, QueueDriver, RepositoryBundle, RuntimeConfig, Session, StatusSnapshot } from "@carvis/core";
 
 import { formatStatusSnapshot } from "../services/status-presenter.ts";
+import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
+import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
 
 export async function handleStatusCommand(input: {
   session: Session;
+  chatType: ChatType;
   agentConfig: AgentConfig;
   repositories: RepositoryBundle;
   queue: QueueDriver;
+  workspaceResolverConfig: RuntimeConfig["workspaceResolver"];
 }): Promise<OutboundMessage> {
-  const activeRun = await input.repositories.runs.findActiveRunByWorkspace(input.agentConfig.workspace);
+  const workspaceProvisioner = createWorkspaceProvisioner({
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+  });
+  const workspaceResolver = createWorkspaceResolver({
+    agentConfig: input.agentConfig,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+    workspaceProvisioner,
+  });
+  const resolvedBinding = await workspaceResolver.resolveCurrentBinding({
+    session: input.session,
+    chatType: input.chatType,
+  });
   const latestRun = await input.repositories.runs.getLatestRunBySession(input.session.id);
   const binding = await input.repositories.conversationSessionBindings.getBindingBySessionId(input.session.id);
+  const activeRun =
+    resolvedBinding.kind === "resolved"
+      ? await input.repositories.runs.findActiveRunByWorkspace(resolvedBinding.workspacePath)
+      : null;
   const isLatestRunQueued = latestRun?.status === "queued";
   const aheadCount =
-    latestRun && isLatestRunQueued
-      ? await input.queue.aheadCount(input.agentConfig.workspace, latestRun.id, Boolean(activeRun))
+    resolvedBinding.kind === "resolved" && latestRun && isLatestRunQueued
+      ? await input.queue.aheadCount(resolvedBinding.workspacePath, latestRun.id, Boolean(activeRun))
       : 0;
   const snapshot: StatusSnapshot = {
     agentId: input.agentConfig.id,
-    workspace: input.agentConfig.workspace,
+    workspace: resolvedBinding.kind === "resolved" ? resolvedBinding.workspacePath : null,
+    workspaceKey: resolvedBinding.kind === "resolved" ? resolvedBinding.workspaceKey : null,
+    workspaceBindingSource: resolvedBinding.bindingSource,
     activeRun,
     latestRun,
     isLatestRunQueued,

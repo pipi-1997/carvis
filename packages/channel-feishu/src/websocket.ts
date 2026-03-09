@@ -1,6 +1,8 @@
 import type { InboundEnvelope } from "@carvis/core";
 import * as Lark from "@larksuiteoapi/node-sdk";
 
+import { normalizeFeishuCommandText } from "./command-normalization.ts";
+
 type FeishuWebsocketEvent = {
   schema?: string;
   header?: {
@@ -14,6 +16,7 @@ type FeishuWebsocketEvent = {
     };
     message?: {
       chat_id?: string;
+      chat_type?: string;
       message_id?: string;
       message_type?: string;
       content?: string;
@@ -126,9 +129,12 @@ export function normalizeFeishuWebsocketEvent(
   }
 
   const parsedContent = parseTextContent(rawContent);
-  const rawText = normalizeMentionPrefix(parsedContent, mentions).trim();
+  const normalizedCommandText = normalizeFeishuCommandText({
+    text: parsedContent,
+    mentions,
+  });
 
-  if (options.requireMention && (!mentions.length || rawText === parsedContent.trim())) {
+  if (options.requireMention && (!mentions.length || normalizedCommandText.rawText === parsedContent.trim())) {
     return {
       accepted: false,
       code: "FILTERED",
@@ -136,27 +142,23 @@ export function normalizeFeishuWebsocketEvent(
     };
   }
 
-  const command =
-    rawText === "/status"
-      ? "status"
-      : rawText === "/abort"
-        ? "abort"
-        : rawText === "/new"
-          ? "new"
-          : null;
-
   return {
     accepted: true,
     envelope: {
       channel: "feishu",
       sessionKey: chatId,
       chatId,
+      chatType: event.event?.message?.chat_type === "p2p" ? "private" : "group",
       messageId,
       userId,
       triggerSource: "chat_message",
-      command,
-      prompt: command || rawText.length === 0 ? null : rawText,
-      rawText,
+      command: normalizedCommandText.command,
+      commandArgs: normalizedCommandText.commandArgs,
+      unknownCommand: normalizedCommandText.unknownCommand,
+      prompt: normalizedCommandText.prompt,
+      rawText: normalizedCommandText.rawText,
+      conversationHint: null,
+      threadHint: null,
     },
   };
 }
@@ -404,25 +406,6 @@ function parseTextContent(rawContent: string): string {
   } catch {
     return "";
   }
-}
-
-function normalizeMentionPrefix(text: string, mentions: Array<{ name?: string }>): string {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("@")) {
-    return trimmed;
-  }
-
-  for (const mention of mentions) {
-    if (!mention.name) {
-      continue;
-    }
-    const prefix = `@${mention.name}`;
-    if (trimmed.startsWith(prefix)) {
-      return trimmed.slice(prefix.length).trim();
-    }
-  }
-
-  return trimmed.replace(/^@\S+\s*/, "").trim();
 }
 
 function isAllowedChat(allowFrom: string[], chatId: string): boolean {

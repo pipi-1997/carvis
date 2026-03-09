@@ -82,6 +82,7 @@ function createSharedRuntimeFixture() {
     agent: {
       id: "codex-main",
       bridge: "codex" as const,
+      defaultWorkspace: "main",
       workspace: "/tmp/carvis-runtime-workspace",
       timeoutSeconds: 60,
       maxConcurrent: 1,
@@ -96,6 +97,14 @@ function createSharedRuntimeFixture() {
     feishu: {
       allowFrom: ["chat-001"],
       requireMention: true,
+    },
+    workspaceResolver: {
+      registry: {
+        main: "/tmp/carvis-runtime-workspace",
+      },
+      chatBindings: {},
+      managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
+      templatePath: "/tmp/carvis-workspace-template",
     },
     secrets: {
       feishuAppId: "cli_test_app",
@@ -150,6 +159,7 @@ function createMessageEvent(text: string, messageId = "msg-001") {
       },
       message: {
         chat_id: "chat-001",
+        chat_type: "p2p",
         message_id: messageId,
         message_type: "text",
         content: JSON.stringify({ text }),

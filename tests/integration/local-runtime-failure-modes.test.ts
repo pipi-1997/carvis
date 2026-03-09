@@ -69,6 +69,7 @@ function createRuntimeServicesFixture(workspace: string, runtimeStore: Map<strin
     agent: {
       id: "codex-main",
       bridge: "codex" as const,
+      defaultWorkspace: "main",
       workspace,
       timeoutSeconds: 60,
       maxConcurrent: 1,
@@ -83,6 +84,14 @@ function createRuntimeServicesFixture(workspace: string, runtimeStore: Map<strin
     feishu: {
       allowFrom: ["chat-001"],
       requireMention: true,
+    },
+    workspaceResolver: {
+      registry: {
+        main: workspace,
+      },
+      chatBindings: {},
+      managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
+      templatePath: "/tmp/carvis-workspace-template",
     },
     secrets: {
       feishuAppId: "cli_test_app",

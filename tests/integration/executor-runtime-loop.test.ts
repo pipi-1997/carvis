@@ -182,6 +182,7 @@ function createRuntimeConfig(env: Record<string, string>): RuntimeConfig {
     agent: {
       id: "codex-main",
       bridge: "codex",
+      defaultWorkspace: "main",
       workspace: "/tmp/carvis-runtime-workspace",
       timeoutSeconds: 60,
       maxConcurrent: 1,
@@ -196,6 +197,14 @@ function createRuntimeConfig(env: Record<string, string>): RuntimeConfig {
     feishu: {
       allowFrom: ["chat-001"],
       requireMention: false,
+    },
+    workspaceResolver: {
+      registry: {
+        main: "/tmp/carvis-runtime-workspace",
+      },
+      chatBindings: {},
+      managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
+      templatePath: "/tmp/carvis-workspace-template",
     },
     secrets: {
       feishuAppId: env.FEISHU_APP_ID,

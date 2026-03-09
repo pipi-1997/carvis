@@ -12,6 +12,8 @@ import { buildRuntimeScope, createRuntimeServices, detectRuntimeFingerprintDrift
 
 import { createGatewayApp } from "./app.ts";
 import { handleAbortCommand } from "./commands/abort.ts";
+import { handleBindCommand } from "./commands/bind.ts";
+import { handleHelpCommand } from "./commands/help.ts";
 import { handleNewCommand } from "./commands/new.ts";
 import { handleStatusCommand } from "./commands/status.ts";
 import { createAllowlistGuard } from "./security/allowlist.ts";
@@ -19,6 +21,8 @@ import { createPresentationOrchestrator } from "./services/presentation-orchestr
 import { createRunNotifier } from "./services/run-notifier.ts";
 import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
+import { createWorkspaceProvisioner } from "./services/workspace-provisioner.ts";
+import { createWorkspaceResolver } from "./services/workspace-resolver.ts";
 
 type GatewayRuntimeServicesLike = {
   cancelSignals: CancelSignalDriver;
@@ -121,13 +125,25 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     notifier,
     cancelSignals: services.cancelSignals,
   });
+  const workspaceProvisioner = createWorkspaceProvisioner({
+    repositories: services.repositories,
+    workspaceResolverConfig: services.config.workspaceResolver,
+  });
+  const workspaceResolver = createWorkspaceResolver({
+    agentConfig: services.config.agent,
+    repositories: services.repositories,
+    workspaceResolverConfig: services.config.workspaceResolver,
+    workspaceProvisioner,
+  });
   const app = createGatewayApp({
     agentConfig: services.config.agent,
     adapter,
     repositories: services.repositories,
     queue: services.queue,
+    workspaceResolverConfig: services.config.workspaceResolver,
     cancelSignals: services.cancelSignals,
     allowlist: createAllowlistGuard(buildAllowlistOptions(services.config.agent, services.config.feishu.allowFrom)),
+    logger: services.logger,
     notifier,
     health: runtimeHealth,
     healthPath: services.config.gateway.healthPath,
@@ -159,12 +175,42 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         agentConfig: services.config.agent,
       });
 
+      if (envelope.command) {
+        services.logger.commandState("recognized", {
+          agentId: services.config.agent.id,
+          chatId: session.chatId,
+          sessionId: session.id,
+          command: envelope.command,
+          normalizedText: envelope.rawText,
+        });
+      }
+
+      if (envelope.unknownCommand) {
+        services.logger.commandState("unknown", {
+          agentId: services.config.agent.id,
+          chatId: session.chatId,
+          sessionId: session.id,
+          command: envelope.unknownCommand,
+          normalizedText: envelope.rawText,
+          reason: "unsupported_slash_command",
+        });
+        const message = await handleHelpCommand({
+          session,
+          chatType: envelope.chatType,
+          unknownCommand: envelope.unknownCommand,
+        });
+        await notifier.sendMessage(message);
+        return;
+      }
+
       if (envelope.command === "status") {
         const message = await handleStatusCommand({
           session,
+          chatType: envelope.chatType,
           agentConfig: services.config.agent,
           repositories: services.repositories,
           queue: services.queue,
+          workspaceResolverConfig: services.config.workspaceResolver,
         });
         await notifier.sendMessage(message);
         return;
@@ -173,7 +219,6 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
       if (envelope.command === "abort") {
         const message = await handleAbortCommand({
           session,
-          agentConfig: services.config.agent,
           repositories: services.repositories,
           cancelSignals: services.cancelSignals,
         });
@@ -191,17 +236,70 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         return;
       }
 
+      if (envelope.command === "help") {
+        const message = await handleHelpCommand({
+          session,
+          chatType: envelope.chatType,
+        });
+        await notifier.sendMessage(message);
+        return;
+      }
+
+      if (envelope.command === "bind") {
+        const message = await handleBindCommand({
+          session,
+          chatType: envelope.chatType,
+          workspaceKey: envelope.commandArgs[0] ?? null,
+          agentConfig: services.config.agent,
+          repositories: services.repositories,
+          workspaceResolverConfig: services.config.workspaceResolver,
+          logger: services.logger,
+        });
+        await notifier.sendMessage(message);
+        return;
+      }
+
       if (!envelope.prompt) {
         return;
       }
 
       const binding = await services.repositories.conversationSessionBindings.getBindingBySessionId(session.id);
+      const resolvedWorkspace = await workspaceResolver.resolveForPrompt({
+        session,
+        chatType: envelope.chatType,
+      });
+
+      if (resolvedWorkspace.kind === "unbound") {
+        services.logger.workspaceResolutionState("unbound", {
+          agentId: services.config.agent.id,
+          chatId: session.chatId,
+          sessionId: session.id,
+          trigger: "prompt",
+        });
+        await notifier.sendMessage({
+          chatId: session.chatId,
+          runId: null,
+          kind: "status",
+          content: resolvedWorkspace.message,
+        });
+        return;
+      }
+
+      services.logger.workspaceResolutionState(resolvedWorkspace.bindingSource, {
+        agentId: services.config.agent.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        workspaceKey: resolvedWorkspace.workspaceKey,
+        workspacePath: resolvedWorkspace.workspacePath,
+        trigger: "prompt",
+      });
+
       const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
-      const activeRun = await services.repositories.runs.findActiveRunByWorkspace(services.config.agent.workspace);
+      const activeRun = await services.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
       const run = await services.repositories.runs.createQueuedRun({
         sessionId: session.id,
         agentId: services.config.agent.id,
-        workspace: services.config.agent.workspace,
+        workspace: resolvedWorkspace.workspacePath,
         prompt: envelope.prompt,
         triggerMessageId: envelope.messageId,
         triggerUserId: envelope.userId,
@@ -209,14 +307,15 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         requestedSessionMode,
         requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
       });
-      const queuePosition = (await services.queue.enqueue(services.config.agent.workspace, run.id)) + (activeRun ? 1 : 0);
+      const queuePosition =
+        (await services.queue.enqueue(resolvedWorkspace.workspacePath, run.id)) + (activeRun ? 1 : 0);
       await services.repositories.runs.updateQueuePosition(run.id, queuePosition);
       const queuedEvent = await services.repositories.events.appendEvent({
         runId: run.id,
         eventType: "run.queued",
         payload: {
           run_id: run.id,
-          workspace: services.config.agent.workspace,
+          workspace: resolvedWorkspace.workspacePath,
           queue_position: queuePosition,
         },
       });

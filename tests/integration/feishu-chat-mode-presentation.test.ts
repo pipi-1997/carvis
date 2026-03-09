@@ -7,6 +7,14 @@ describe("chat mode presentation semantics", () => {
     const runScenario = async (chatType: "group" | "p2p") => {
       const harness = createHarness({
         transportScript: [{ type: "result", resultSummary: "已完成" }],
+        workspaceResolver:
+          chatType === "group"
+            ? {
+                chatBindings: {
+                  "group-chat": "main",
+                },
+              }
+            : undefined,
       });
 
       await harness.postFeishuText("请处理请求", {

@@ -11,7 +11,12 @@ describe("restart recovery", () => {
   test("网关重建后 /status 仍读取持久化状态", async () => {
     const harness = createHarness();
 
-    await harness.postFeishuText("帮我总结仓库");
+    await harness.postFeishuText("帮我总结仓库", {
+      chat_id: "p2p-restart",
+      chat_type: "p2p",
+      message_id: "msg-001",
+      user_id: "user-001",
+    });
     await harness.executor.processNext();
 
     const adapter = new FeishuAdapter({
@@ -27,6 +32,7 @@ describe("restart recovery", () => {
       adapter,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
       cancelSignals: harness.cancelSignals,
       allowlist: createAllowlistGuard(),
       notifier: createRunNotifier({
@@ -35,7 +41,12 @@ describe("restart recovery", () => {
       }),
       now: () => new Date("2026-03-08T00:10:00.000Z"),
     });
-    const payload = createFeishuPayload("/status");
+    const payload = createFeishuPayload("/status", {
+      chat_id: "p2p-restart",
+      chat_type: "p2p",
+      message_id: "msg-status",
+      user_id: "user-001",
+    });
     const body = JSON.stringify(payload);
 
     const response = await gateway.request("http://localhost/webhooks/feishu", {

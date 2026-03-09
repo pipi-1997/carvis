@@ -1,5 +1,6 @@
 import type { InboundEnvelope, OutboundMessage } from "@carvis/core";
 
+import { normalizeFeishuCommandText } from "./command-normalization.ts";
 import { verifyFeishuSignature } from "./signature.ts";
 import type {
   FeishuCardCompleteInput,
@@ -19,6 +20,7 @@ interface FeishuWebhookPayload {
     message: {
       message_id: string;
       chat_id: string;
+      chat_type?: string;
       content: string;
     };
   };
@@ -64,19 +66,27 @@ export class FeishuAdapter {
 
   async parseInbound(payload: FeishuWebhookPayload): Promise<InboundEnvelope> {
     const content = JSON.parse(payload.event.message.content) as { text?: string };
-    const rawText = (content.text ?? "").trim();
-    const command = rawText === "/status" ? "status" : rawText === "/abort" ? "abort" : rawText === "/new" ? "new" : null;
+    const chatType = normalizeChatType(payload.event.message.chat_type);
+    const normalizedCommandText = normalizeFeishuCommandText({
+      text: content.text ?? "",
+      allowCommandMentionFallback: chatType === "group",
+    });
 
     return {
       channel: "feishu",
       sessionKey: payload.event.message.chat_id,
       chatId: payload.event.message.chat_id,
+      chatType,
       messageId: payload.event.message.message_id,
       userId: payload.event.sender.sender_id.open_id,
       triggerSource: "chat_message",
-      command,
-      prompt: command ? null : rawText,
-      rawText,
+      command: normalizedCommandText.command,
+      commandArgs: normalizedCommandText.commandArgs,
+      unknownCommand: normalizedCommandText.unknownCommand,
+      prompt: normalizedCommandText.prompt,
+      rawText: normalizedCommandText.rawText,
+      conversationHint: null,
+      threadHint: null,
     };
   }
 
@@ -122,3 +132,7 @@ export class FeishuAdapter {
 }
 
 export type { FeishuWebhookPayload };
+
+function normalizeChatType(chatType?: string): InboundEnvelope["chatType"] {
+  return chatType === "p2p" ? "private" : "group";
+}

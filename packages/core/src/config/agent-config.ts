@@ -14,6 +14,9 @@ export function validateAgentConfig(config: AgentConfig): AgentConfig {
   if (config.bridge !== "codex") {
     throw new Error("agent.bridge must be codex");
   }
+  if (!config.defaultWorkspace) {
+    throw new Error("agent.defaultWorkspace is required");
+  }
   if (!config.workspace) {
     throw new Error("agent.workspace is required");
   }
@@ -33,11 +36,25 @@ export async function loadAgentConfig(configPath = DEFAULT_AGENT_CONFIG_PATH): P
   }
 
   const raw = await readFile(configPath, "utf8");
-  const parsed = JSON.parse(raw) as { agent?: AgentConfig };
+  const parsed = JSON.parse(raw) as {
+    agent?: Omit<AgentConfig, "workspace"> & { workspace?: string };
+    workspaceResolver?: { registry?: Record<string, string> };
+  };
 
   if (!parsed.agent) {
     throw new Error("config.agent is required");
   }
 
-  return validateAgentConfig(parsed.agent);
+  const resolvedWorkspace =
+    parsed.agent.workspace ??
+    (parsed.workspaceResolver?.registry ? parsed.workspaceResolver.registry[parsed.agent.defaultWorkspace] : undefined);
+
+  if (!resolvedWorkspace) {
+    throw new Error("agent.defaultWorkspace must exist in workspaceResolver.registry");
+  }
+
+  return validateAgentConfig({
+    ...parsed.agent,
+    workspace: resolvedWorkspace,
+  });
 }

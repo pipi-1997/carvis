@@ -215,6 +215,7 @@ function createGatewayRuntimeServicesFixture(input: {
       agent: {
         id: "codex-main",
         bridge: "codex" as const,
+        defaultWorkspace: "main",
         workspace: "/tmp/carvis-workspace",
         timeoutSeconds: 60,
         maxConcurrent: 1,
@@ -230,6 +231,7 @@ function createGatewayRuntimeServicesFixture(input: {
         allowFrom: input.allowFrom ?? ["*"],
         requireMention: false,
       },
+      workspaceResolver: harness.workspaceResolverConfig,
       secrets: {
         feishuAppId: "cli_test_app",
         feishuAppSecret: "test_app_secret",

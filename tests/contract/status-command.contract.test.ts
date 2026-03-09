@@ -4,33 +4,49 @@ import { handleStatusCommand } from "../../apps/gateway/src/commands/status.ts";
 import { TEST_AGENT_CONFIG, createHarness } from "../support/harness.ts";
 
 describe("/status contract", () => {
-  test("没有 active run 时返回绑定信息和空闲状态", async () => {
+  test("private chat 没有 active run 时返回 default workspace 绑定和空闲状态", async () => {
     const harness = createHarness();
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
-      chatId: "chat-001",
+      chatId: "p2p-001",
       agentConfig: TEST_AGENT_CONFIG,
     });
 
     const result = await handleStatusCommand({
       session,
+      chatType: "private",
       agentConfig: TEST_AGENT_CONFIG,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
     });
 
     expect(result.kind).toBe("status");
     expect(result.content).toContain("当前无活动运行");
-    expect(result.content).toContain(TEST_AGENT_CONFIG.workspace);
+    expect(result.content).toContain("workspace key: main");
+    expect(result.content).toContain("workspace 来源: default");
     expect(result.content).toContain("当前会话续聊: fresh");
   });
 
-  test("存在续聊绑定时返回 continued 状态", async () => {
-    const harness = createHarness();
+  test("存在手动 workspace 绑定和续聊绑定时同时返回 manual 与 continued", async () => {
+    const harness = createHarness({
+      workspaceResolver: {
+        registry: {
+          main: "/tmp/carvis-status-main-workspace",
+          ops: "/tmp/carvis-ops-workspace",
+        },
+      },
+    });
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
       agentConfig: TEST_AGENT_CONFIG,
+    });
+    await harness.repositories.sessionWorkspaceBindings.saveBinding({
+      session,
+      workspaceKey: "ops",
+      bindingSource: "manual",
+      now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({
       session,
@@ -42,11 +58,15 @@ describe("/status contract", () => {
 
     const result = await handleStatusCommand({
       session,
+      chatType: "group",
       agentConfig: TEST_AGENT_CONFIG,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
     });
 
+    expect(result.content).toContain("workspace key: ops");
+    expect(result.content).toContain("workspace 来源: manual");
     expect(result.content).toContain("当前会话续聊: continued");
   });
 
@@ -68,9 +88,11 @@ describe("/status contract", () => {
 
     const result = await handleStatusCommand({
       session,
+      chatType: "group",
       agentConfig: TEST_AGENT_CONFIG,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
     });
 
     expect(result.content).toContain("当前会话续聊: recent_recovered");
@@ -92,11 +114,35 @@ describe("/status contract", () => {
 
     const result = await handleStatusCommand({
       session,
+      chatType: "group",
       agentConfig: TEST_AGENT_CONFIG,
       repositories: harness.repositories,
       queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
     });
 
     expect(result.content).toContain("当前会话续聊: recent_recovery_failed");
+  });
+
+  test("unbound group chat 会返回 unbound 状态和 bind 引导", async () => {
+    const harness = createHarness();
+    const session = await harness.repositories.sessions.getOrCreateSession({
+      channel: "feishu",
+      chatId: "chat-unbound",
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    const result = await handleStatusCommand({
+      session,
+      chatType: "group",
+      agentConfig: TEST_AGENT_CONFIG,
+      repositories: harness.repositories,
+      queue: harness.queue,
+      workspaceResolverConfig: harness.workspaceResolverConfig,
+    });
+
+    expect(result.content).toContain("workspace key: (unbound)");
+    expect(result.content).toContain("workspace 来源: unbound");
+    expect(result.content).toContain("/bind <workspace-key>");
   });
 });

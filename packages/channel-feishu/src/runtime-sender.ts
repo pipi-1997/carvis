@@ -383,9 +383,11 @@ function buildInteractiveCard(input: {
   status?: "completed" | "failed" | "cancelled";
 }) {
   const template = input.status ? STATUS_TEMPLATES[input.status] : "blue";
+  const elementId = input.elementId ?? "carvis-output";
 
   return {
     config: {
+      update_multi: true,
       wide_screen_mode: true,
     },
     header: {
@@ -395,14 +397,98 @@ function buildInteractiveCard(input: {
         content: input.title,
       },
     },
-    elements: [
-      {
-        tag: "markdown",
-        element_id: input.elementId ?? "carvis-output",
-        content: input.body,
-      },
-    ],
+    elements: buildCardElements(input.body, elementId),
   };
+}
+
+function buildCardElements(body: string, baseElementId: string) {
+  const sections = splitMarkdownSections(body);
+  const hasStructuredHeadings = sections.some((section) => section.heading !== null);
+
+  if (!hasStructuredHeadings) {
+    return [buildMarkdownDiv(baseElementId, normalizeLarkMd(body))];
+  }
+
+  return sections.flatMap((section, index) => {
+    const normalized = normalizeSectionContent(section);
+    if (!normalized) {
+      return [];
+    }
+
+    const elementId = index === 0 ? baseElementId : `${baseElementId}-section-${index}`;
+    return [
+      ...(index > 0 ? [{ tag: "hr" as const }] : []),
+      buildMarkdownDiv(elementId, normalized),
+    ];
+  });
+}
+
+function buildMarkdownDiv(elementId: string, content: string) {
+  return {
+    tag: "div" as const,
+    element_id: elementId,
+    text: {
+      tag: "lark_md" as const,
+      content,
+    },
+  };
+}
+
+function splitMarkdownSections(body: string): Array<{ heading: string | null; content: string }> {
+  const normalized = body.replaceAll("\r\n", "\n").trim();
+  if (!normalized) {
+    return [{ heading: null, content: "" }];
+  }
+
+  const lines = normalized.split("\n");
+  const sections: Array<{ heading: string | null; content: string }> = [];
+  let currentHeading: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    const heading = matchMarkdownHeading(line);
+    if (heading) {
+      if (currentHeading !== null || currentLines.length > 0) {
+        sections.push({
+          heading: currentHeading,
+          content: currentLines.join("\n").trim(),
+        });
+      }
+      currentHeading = heading;
+      currentLines = [];
+      continue;
+    }
+
+    currentLines.push(line);
+  }
+
+  sections.push({
+    heading: currentHeading,
+    content: currentLines.join("\n").trim(),
+  });
+
+  return sections;
+}
+
+function normalizeSectionContent(section: { heading: string | null; content: string }) {
+  const content = normalizeLarkMd(section.content);
+  if (!section.heading) {
+    return content;
+  }
+
+  return content ? `**${section.heading}**\n${content}` : `**${section.heading}**`;
+}
+
+function normalizeLarkMd(body: string) {
+  return body
+    .replaceAll("\r\n", "\n")
+    .replace(/^\s*#{1,6}\s+(.+)$/gm, (_match, title: string) => `**${title.trim()}**`)
+    .trim();
+}
+
+function matchMarkdownHeading(line: string) {
+  const matched = line.match(/^\s*#{1,6}\s+(.+?)\s*$/);
+  return matched?.[1]?.trim() || null;
 }
 
 const STATUS_TEMPLATES = {

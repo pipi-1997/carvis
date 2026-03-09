@@ -82,4 +82,86 @@ describe("runtime logger", () => {
       },
     });
   });
+
+  test("命令归一化结果会输出结构化日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.commandState("unknown", {
+      agentId: "codex-main",
+      chatId: "chat-ops",
+      sessionId: "session-ops",
+      command: "/bindd",
+      normalizedText: "/bindd ops",
+      reason: "unsupported_slash_command",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "warn",
+      message: "command.unknown",
+      context: {
+        agentId: "codex-main",
+        chatId: "chat-ops",
+        command: "/bindd",
+        normalizedText: "/bindd ops",
+        reason: "unsupported_slash_command",
+        role: "gateway",
+        sessionId: "session-ops",
+        status: "unknown",
+      },
+    });
+  });
+
+  test("workspace 解析结果会输出结构化日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.workspaceResolutionState("config", {
+      agentId: "codex-main",
+      chatId: "chat-ops",
+      sessionId: "session-ops",
+      trigger: "prompt",
+      workspaceKey: "ops",
+      workspacePath: "/tmp/carvis-ops-workspace",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "info",
+      message: "workspace.resolution.config",
+      context: {
+        agentId: "codex-main",
+        chatId: "chat-ops",
+        role: "gateway",
+        sessionId: "session-ops",
+        status: "config",
+        trigger: "prompt",
+        workspaceKey: "ops",
+        workspacePath: "/tmp/carvis-ops-workspace",
+      },
+    });
+  });
+
+  test("workspace bind 失败会输出错误日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.workspaceBindState("create_failed", {
+      agentId: "codex-main",
+      chatId: "chat-ops",
+      sessionId: "session-ops",
+      workspaceKey: "feature-a",
+      reason: "workspace template unavailable: missing",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "error",
+      message: "workspace.bind.create_failed",
+      context: {
+        agentId: "codex-main",
+        chatId: "chat-ops",
+        reason: "workspace template unavailable: missing",
+        role: "gateway",
+        sessionId: "session-ops",
+        status: "create_failed",
+        workspaceKey: "feature-a",
+      },
+    });
+  });
 });

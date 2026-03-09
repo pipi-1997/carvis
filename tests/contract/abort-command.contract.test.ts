@@ -24,7 +24,6 @@ describe("/abort contract", () => {
 
     const result = await handleAbortCommand({
       session,
-      agentConfig: TEST_AGENT_CONFIG,
       repositories: harness.repositories,
       cancelSignals: harness.cancelSignals,
       now: () => new Date("2026-03-08T00:00:01.000Z"),

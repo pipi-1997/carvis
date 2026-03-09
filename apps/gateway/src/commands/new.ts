@@ -15,6 +15,6 @@ export async function handleNewCommand(input: {
     chatId: input.session.chatId,
     runId: null,
     kind: "status",
-    content: "已重置当前会话上下文，后续普通消息将从新会话开始",
+    content: "已重置当前会话续聊上下文，workspace 绑定保持不变，后续普通消息将从新会话开始",
   };
 }

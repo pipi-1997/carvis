@@ -3,8 +3,13 @@ import type { StatusSnapshot } from "@carvis/core";
 export function formatStatusSnapshot(snapshot: StatusSnapshot): string {
   const lines = [
     `agent: ${snapshot.agentId}`,
-    `workspace: ${snapshot.workspace}`,
+    `workspace key: ${snapshot.workspaceKey ?? "(unbound)"}`,
+    `workspace 来源: ${snapshot.workspaceBindingSource}`,
   ];
+
+  if (snapshot.workspace) {
+    lines.push(`workspace path: ${snapshot.workspace}`);
+  }
 
   if (snapshot.activeRun) {
     lines.push(`当前活动运行: ${snapshot.activeRun.status}`);
@@ -16,6 +21,10 @@ export function formatStatusSnapshot(snapshot: StatusSnapshot): string {
   lines.push(`当前会话最近请求排队: ${snapshot.isLatestRunQueued ? "是" : "否"}`);
   lines.push(`前方队列长度: ${snapshot.aheadCount}`);
   lines.push(`当前会话续聊: ${snapshot.continuationState}`);
+
+  if (snapshot.workspaceBindingSource === "unbound") {
+    lines.push("下一步: /bind <workspace-key>");
+  }
 
   return lines.join("\n");
 }

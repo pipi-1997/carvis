@@ -31,6 +31,8 @@ describe("runtime factory", () => {
     });
 
     expect(runtime.config.agent.id).toBe("codex-main");
+    expect(runtime.config.agent.defaultWorkspace).toBe("main");
+    expect(runtime.config.agent.workspace).toBe(runtime.config.workspaceResolver.registry.main);
     expect(runtime.configFingerprint.length).toBeGreaterThan(10);
     expect(runtime.postgres.kind).toBe("postgres");
     expect(runtime.redis.kind).toBe("redis");

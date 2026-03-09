@@ -3,6 +3,7 @@ export interface QueueDriver {
   dequeue(workspace: string): string | null | Promise<string | null>;
   enqueue(workspace: string, runId: string): number | Promise<number>;
   length(workspace: string): number | Promise<number>;
+  listWorkspaces(): string[] | Promise<string[]>;
   remove(workspace: string, runId: string): void | Promise<void>;
 }
 
@@ -35,6 +36,10 @@ export class RunQueue {
     return (this.queues.get(workspace) ?? []).length;
   }
 
+  listWorkspaces(): string[] {
+    return Array.from(this.queues.keys()).filter((workspace) => (this.queues.get(workspace)?.length ?? 0) > 0);
+  }
+
   aheadCount(workspace: string, runId: string, hasActiveRun: boolean): number {
     const current = this.queues.get(workspace) ?? [];
     const index = current.indexOf(runId);
@@ -46,6 +51,7 @@ export class RunQueue {
 }
 
 export interface RedisListClient {
+  keys(pattern: string): Promise<string[]>;
   llen(key: string): Promise<number>;
   lrange(key: string, start: number, stop: number): Promise<string[]>;
   lpop(key: string): Promise<string | null>;
@@ -75,6 +81,11 @@ export class RedisRunQueue {
 
   async length(workspace: string): Promise<number> {
     return this.redis.llen(this.key(workspace));
+  }
+
+  async listWorkspaces(): Promise<string[]> {
+    const keys = await this.redis.keys(`${this.prefix}:*`);
+    return keys.map((key) => key.slice(this.prefix.length + 1));
   }
 
   async aheadCount(workspace: string, runId: string, hasActiveRun: boolean): Promise<number> {

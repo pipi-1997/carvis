@@ -280,7 +280,7 @@ describe("feishu runtime sender", () => {
       runId: "run-1",
       status: "completed",
       title: "运行已完成",
-      body: "**状态**：已完成",
+      body: "## 结论\n已完成\n\n## 验证\n- bun test",
     });
 
     expect(created).toEqual({
@@ -295,13 +295,17 @@ describe("feishu runtime sender", () => {
       msg_type: "interactive",
       card: {
         config: {
+          update_multi: true,
           wide_screen_mode: true,
         },
         elements: [
           {
-            content: "正在处理",
             element_id: "carvis-output",
-            tag: "markdown",
+            tag: "div",
+            text: {
+              content: "正在处理",
+              tag: "lark_md",
+            },
           },
         ],
         header: {
@@ -318,13 +322,17 @@ describe("feishu runtime sender", () => {
     const updatePayload = JSON.parse(requests[2]?.body ?? "{}");
     expect(JSON.parse(updatePayload.content)).toEqual({
       config: {
+        update_multi: true,
         wide_screen_mode: true,
       },
       elements: [
         {
-          content: "最新输出",
           element_id: "carvis-output",
-          tag: "markdown",
+          tag: "div",
+          text: {
+            content: "最新输出",
+            tag: "lark_md",
+          },
         },
       ],
       header: {
@@ -340,19 +348,128 @@ describe("feishu runtime sender", () => {
     const completePayload = JSON.parse(requests[3]?.body ?? "{}");
     expect(JSON.parse(completePayload.content)).toEqual({
       config: {
+        update_multi: true,
         wide_screen_mode: true,
       },
       elements: [
         {
-          content: "**状态**：已完成",
           element_id: "carvis-output",
-          tag: "markdown",
+          tag: "div",
+          text: {
+            content: "**结论**\n已完成",
+            tag: "lark_md",
+          },
+        },
+        {
+          tag: "hr",
+        },
+        {
+          element_id: "carvis-output-section-1",
+          tag: "div",
+          text: {
+            content: "**验证**\n- bun test",
+            tag: "lark_md",
+          },
         },
       ],
       header: {
         template: "green",
         title: {
           content: "运行已完成",
+          tag: "plain_text",
+        },
+      },
+    });
+  });
+
+  test("终态卡片会把 markdown 二级标题归一化为 lark_md 分段", async () => {
+    const requests: Array<{ url: string; method: string; body: string | undefined }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 2) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                message_id: "om_card_2",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            code: 0,
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const created = await sender.createCard({
+      chatId: "oc_test_chat",
+      runId: "run-2",
+      title: "运行中",
+      body: "准备中",
+    });
+
+    await sender.completeCard({
+      cardId: created.cardId,
+      elementId: created.elementId,
+      runId: "run-2",
+      status: "failed",
+      title: "运行失败",
+      body: "## 结论\n命令失败\n\n## 下一步\n1. 重试",
+    });
+
+    const completePayload = JSON.parse(requests[2]?.body ?? "{}");
+    expect(JSON.parse(completePayload.content)).toEqual({
+      config: {
+        update_multi: true,
+        wide_screen_mode: true,
+      },
+      elements: [
+        {
+          element_id: "carvis-output",
+          tag: "div",
+          text: {
+            content: "**结论**\n命令失败",
+            tag: "lark_md",
+          },
+        },
+        {
+          tag: "hr",
+        },
+        {
+          element_id: "carvis-output-section-1",
+          tag: "div",
+          text: {
+            content: "**下一步**\n1. 重试",
+            tag: "lark_md",
+          },
+        },
+      ],
+      header: {
+        template: "red",
+        title: {
+          content: "运行失败",
           tag: "plain_text",
         },
       },

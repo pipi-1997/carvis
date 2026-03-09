@@ -75,6 +75,12 @@ describe("runtime services", () => {
           sql: expect.stringContaining("CREATE TABLE IF NOT EXISTS run_presentations"),
         }),
         expect.objectContaining({
+          sql: expect.stringContaining("CREATE TABLE IF NOT EXISTS session_workspace_bindings"),
+        }),
+        expect.objectContaining({
+          sql: expect.stringContaining("CREATE TABLE IF NOT EXISTS workspace_catalog"),
+        }),
+        expect.objectContaining({
           sql: "SELECT pg_advisory_unlock($1, $2)",
           params: [20260308, 1],
         }),

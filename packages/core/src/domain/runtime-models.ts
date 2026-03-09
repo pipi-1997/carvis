@@ -21,11 +21,19 @@ export interface ExecutorConfig {
   pollIntervalMs: number;
 }
 
+export interface WorkspaceResolverConfig {
+  registry: Record<string, string>;
+  chatBindings: Record<string, string>;
+  managedWorkspaceRoot: string;
+  templatePath: string;
+}
+
 export interface RuntimeConfig {
   agent: AgentConfig;
   gateway: GatewayConfig;
   executor: ExecutorConfig;
   feishu: FeishuConnectionConfig;
+  workspaceResolver: WorkspaceResolverConfig;
   secrets: RuntimeSecrets;
 }
 
@@ -74,7 +82,12 @@ export interface RuntimeDependencyTargets {
 export interface RuntimeFingerprintInput {
   agentId: string;
   bridge: AgentConfig["bridge"];
+  defaultWorkspace: string;
   workspace: string;
+  workspaceRegistryEntries: string[];
+  workspaceChatBindings: string[];
+  managedWorkspaceRoot: string;
+  templatePath: string;
   feishuAllowFrom: string[];
   feishuRequireMention: boolean;
   feishuAppId: string;

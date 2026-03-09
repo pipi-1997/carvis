@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { createPostgresRepositories } from "@carvis/core";
-import type { ConversationSessionBinding, RunPresentation, Session } from "@carvis/core";
+import type {
+  ConversationSessionBinding,
+  RunPresentation,
+  Session,
+  SessionWorkspaceBinding,
+  WorkspaceCatalogEntry,
+} from "@carvis/core";
 
 describe("postgres repositories", () => {
   test("getSessionById 将 sessions 字段映射为领域模型的 camelCase", async () => {
@@ -226,6 +232,91 @@ describe("postgres repositories", () => {
       null,
       null,
       null,
+      "2026-03-09T00:00:00.000Z",
+      "2026-03-09T00:00:00.000Z",
+    ]);
+  });
+
+  test("getBindingBySessionId 将 session_workspace_bindings 字段映射为领域模型的 camelCase", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              sessionId: "session-1",
+              chatId: "oc_test_chat",
+              workspaceKey: "ops",
+              bindingSource: "manual",
+              createdAt: "2026-03-09T00:00:00.000Z",
+              updatedAt: "2026-03-09T00:00:01.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const binding = await repositories.sessionWorkspaceBindings.getBindingBySessionId("session-1");
+
+    expect(binding).toEqual({
+      sessionId: "session-1",
+      chatId: "oc_test_chat",
+      workspaceKey: "ops",
+      bindingSource: "manual",
+      createdAt: "2026-03-09T00:00:00.000Z",
+      updatedAt: "2026-03-09T00:00:01.000Z",
+    } satisfies SessionWorkspaceBinding);
+    expect(queries).toEqual([
+      {
+        sql: expect.stringContaining('workspace_key AS "workspaceKey"'),
+        params: ["session-1"],
+      },
+    ]);
+  });
+
+  test("createEntry 会写入 workspace_catalog 所需字段", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              workspaceKey: "feature-a",
+              workspacePath: "/tmp/managed/feature-a",
+              provisionSource: "template_created",
+              templateRef: "/tmp/template",
+              createdAt: "2026-03-09T00:00:00.000Z",
+              updatedAt: "2026-03-09T00:00:00.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const entry = await repositories.workspaceCatalog.createEntry({
+      workspaceKey: "feature-a",
+      workspacePath: "/tmp/managed/feature-a",
+      provisionSource: "template_created",
+      templateRef: "/tmp/template",
+      now: new Date("2026-03-09T00:00:00.000Z"),
+    });
+
+    expect(entry).toEqual({
+      workspaceKey: "feature-a",
+      workspacePath: "/tmp/managed/feature-a",
+      provisionSource: "template_created",
+      templateRef: "/tmp/template",
+      createdAt: "2026-03-09T00:00:00.000Z",
+      updatedAt: "2026-03-09T00:00:00.000Z",
+    } satisfies WorkspaceCatalogEntry);
+    expect(queries[0]?.sql).toContain("INSERT INTO workspace_catalog");
+    expect(queries[0]?.params).toEqual([
+      "feature-a",
+      "/tmp/managed/feature-a",
+      "template_created",
+      "/tmp/template",
       "2026-03-09T00:00:00.000Z",
       "2026-03-09T00:00:00.000Z",
     ]);

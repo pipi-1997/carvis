@@ -1,5 +1,6 @@
 import { StructuredLogger } from "./logger.ts";
 import type { RuntimeStatus } from "../domain/runtime-models.ts";
+import type { WorkspaceBindingSource } from "../domain/models.ts";
 
 type GatewayStateInput = {
   configFingerprint: string;
@@ -29,8 +30,50 @@ type ContinuationBindingStateInput = {
   recoveryResult?: string | null;
 };
 
+type WorkspaceResolutionStateInput = {
+  agentId: string;
+  chatId: string;
+  sessionId: string;
+  workspaceKey?: string | null;
+  workspacePath?: string | null;
+  trigger: "prompt" | "status";
+};
+
+type WorkspaceBindStateInput = {
+  agentId: string;
+  chatId: string;
+  sessionId: string;
+  workspaceKey?: string | null;
+  workspacePath?: string | null;
+  reason?: string;
+};
+
+type CommandStateInput = {
+  agentId: string;
+  chatId: string;
+  sessionId: string;
+  command?: string | null;
+  normalizedText?: string | null;
+  rawText?: string | null;
+  reason?: string;
+};
+
 export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
   return {
+    commandState(status: "recognized" | "unknown" | "mention_normalized", input: CommandStateInput) {
+      const level = status === "unknown" ? "warn" : "info";
+      baseLogger[level](`command.${status}`, {
+        role: "gateway",
+        status,
+        agentId: input.agentId,
+        chatId: input.chatId,
+        sessionId: input.sessionId,
+        ...(input.command ? { command: input.command } : {}),
+        ...(input.normalizedText ? { normalizedText: input.normalizedText } : {}),
+        ...(input.rawText ? { rawText: input.rawText } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
     continuationBindingState(
       status: "bound" | "reset" | "invalidated" | "recovered" | "recovery_failed",
       input: ContinuationBindingStateInput,
@@ -46,6 +89,35 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         ...(input.bridgeSessionId ? { bridgeSessionId: input.bridgeSessionId } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
         ...(input.recoveryResult ? { recoveryResult: input.recoveryResult } : {}),
+      });
+    },
+    workspaceBindState(
+      status: "bound" | "created" | "noop_already_bound" | "rejected_active_run" | "create_failed",
+      input: WorkspaceBindStateInput,
+    ) {
+      const level = status === "create_failed" ? "error" : status === "rejected_active_run" ? "warn" : "info";
+      baseLogger[level](`workspace.bind.${status}`, {
+        role: "gateway",
+        status,
+        agentId: input.agentId,
+        chatId: input.chatId,
+        sessionId: input.sessionId,
+        ...(input.workspaceKey ? { workspaceKey: input.workspaceKey } : {}),
+        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
+    workspaceResolutionState(status: WorkspaceBindingSource, input: WorkspaceResolutionStateInput) {
+      const level = status === "unbound" ? "warn" : "info";
+      baseLogger[level](`workspace.resolution.${status}`, {
+        role: "gateway",
+        status,
+        agentId: input.agentId,
+        chatId: input.chatId,
+        sessionId: input.sessionId,
+        trigger: input.trigger,
+        ...(input.workspaceKey ? { workspaceKey: input.workspaceKey } : {}),
+        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
       });
     },
     error(message: string, context?: Record<string, unknown>) {

@@ -27,6 +27,7 @@ describe("gateway feishu runtime wiring", () => {
             allowFrom: ["chat-001"],
             requireMention: true,
           },
+          workspaceResolver: harness.workspaceResolverConfig,
           secrets: {
             feishuAppId: "cli_test_app",
             feishuAppSecret: "test_app_secret",
@@ -82,6 +83,7 @@ describe("gateway feishu runtime wiring", () => {
         },
         message: {
           chat_id: "chat-001",
+          chat_type: "p2p",
           message_id: "msg-001",
           message_type: "text",
           content: JSON.stringify({

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 import { createExecutorWorker } from "../../apps/executor/src/worker.ts";
 import { createGatewayApp } from "../../apps/gateway/src/app.ts";
@@ -10,6 +11,8 @@ import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge
 import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
 import type { AgentConfig, OutboundMessage, RunRequest, RunStatus } from "../../packages/core/src/domain/models.ts";
+import type { RuntimeConfig } from "../../packages/core/src/domain/runtime-models.ts";
+import { createRuntimeLogger } from "../../packages/core/src/observability/runtime-logger.ts";
 import { createInMemoryRepositories } from "../../packages/core/src/storage/repositories.ts";
 import { CancelSignalStore } from "../../packages/core/src/runtime/cancel-signal.ts";
 import { HeartbeatMonitor } from "../../packages/core/src/runtime/heartbeat.ts";
@@ -19,7 +22,8 @@ import { WorkspaceLockManager } from "../../packages/core/src/runtime/workspace-
 export const TEST_AGENT_CONFIG: AgentConfig = {
   id: "codex-main",
   bridge: "codex",
-  workspace: "/tmp/carvis-workspace",
+  defaultWorkspace: "main",
+  workspace: "/tmp/carvis-managed-workspaces/main",
   timeoutSeconds: 60,
   maxConcurrent: 1,
 };
@@ -42,7 +46,7 @@ export function createSignedHeaders(
 
 export function createFeishuPayload(text: string, overrides?: Partial<Record<string, string>>) {
   const chatId = overrides?.chat_id ?? "chat-001";
-  const chatType = overrides?.chat_type ?? "group";
+  const chatType = overrides?.chat_type ?? "p2p";
   const messageId = overrides?.message_id ?? "msg-001";
   const userId = overrides?.user_id ?? "user-001";
 
@@ -70,10 +74,12 @@ export function createFeishuPayload(text: string, overrides?: Partial<Record<str
 }
 
 export function createHarness(options?: {
+  agentConfig?: Partial<AgentConfig>;
   transport?: CodexTransport;
   transportScript?: Parameters<typeof createScriptedCodexTransport>[0];
   heartbeatTtlMs?: number;
   allowChatIds?: string[];
+  workspaceResolver?: Partial<RuntimeConfig["workspaceResolver"]>;
   presentation?: {
     failCardCreate?: boolean;
     failCardUpdate?: boolean;
@@ -82,6 +88,38 @@ export function createHarness(options?: {
   let currentTime = Date.parse("2026-03-08T00:00:00.000Z");
   const now = () => new Date(currentTime);
   const repositories = createInMemoryRepositories();
+  const logger = createRuntimeLogger();
+  const uniqueSuffix = Math.random().toString(36).slice(2, 10);
+  const inputAgentConfig: AgentConfig = {
+    ...TEST_AGENT_CONFIG,
+    ...options?.agentConfig,
+  };
+  const managedWorkspaceRoot =
+    options?.workspaceResolver?.managedWorkspaceRoot ?? `/tmp/carvis-managed-workspaces-${uniqueSuffix}`;
+  const defaultWorkspacePath =
+    options?.workspaceResolver?.registry?.[inputAgentConfig.defaultWorkspace] ??
+    `${managedWorkspaceRoot}/${inputAgentConfig.defaultWorkspace}`;
+  const agentConfig: AgentConfig = {
+    ...inputAgentConfig,
+    workspace: defaultWorkspacePath,
+  };
+  const workspaceResolverConfig: RuntimeConfig["workspaceResolver"] = {
+    registry: {
+      [agentConfig.defaultWorkspace]: agentConfig.workspace,
+      ...options?.workspaceResolver?.registry,
+    },
+    chatBindings: {
+      ...options?.workspaceResolver?.chatBindings,
+    },
+    managedWorkspaceRoot,
+    templatePath: options?.workspaceResolver?.templatePath ?? `/tmp/carvis-template-${uniqueSuffix}`,
+  };
+  for (const workspacePath of Object.values(workspaceResolverConfig.registry)) {
+    mkdirSync(workspacePath, { recursive: true });
+  }
+  mkdirSync(workspaceResolverConfig.managedWorkspaceRoot, { recursive: true });
+  mkdirSync(workspaceResolverConfig.templatePath, { recursive: true });
+  writeStarterTemplate(workspaceResolverConfig.templatePath);
   const queue = new RunQueue();
   const workspaceLocks = new WorkspaceLockManager();
   const cancelSignals = new CancelSignalStore();
@@ -251,11 +289,13 @@ export function createHarness(options?: {
     now,
   });
   const gateway = createGatewayApp({
-    agentConfig: TEST_AGENT_CONFIG,
+    agentConfig,
     adapter,
     repositories,
     queue,
+    workspaceResolverConfig,
     cancelSignals,
+    logger,
     allowlist: createAllowlistGuard({
       allowedChatIds: options?.allowChatIds,
     }),
@@ -263,7 +303,7 @@ export function createHarness(options?: {
     now,
   });
   const executor = createExecutorWorker({
-    agentConfig: TEST_AGENT_CONFIG,
+    agentConfig,
     repositories,
     queue,
     workspaceLocks,
@@ -327,12 +367,14 @@ export function createHarness(options?: {
       currentTime += ms;
     },
     adapter,
+    agentConfig,
     bridge,
     bridgeRequests,
     cancelSignals,
     executor,
     gateway,
     heartbeats,
+    logger,
     notifier,
     postFeishuText,
     presentationOrchestrator,
@@ -344,8 +386,15 @@ export function createHarness(options?: {
     repositories,
     sentMessages,
     workspaceLocks,
+    workspaceResolverConfig,
     listRunStatuses,
     waitForHeartbeat,
     waitForRunStatus,
   };
+}
+
+function writeStarterTemplate(templatePath: string) {
+  writeFileSync(`${templatePath}/README.md`, "# template\n\nManaged workspace starter.\n");
+  writeFileSync(`${templatePath}/.gitignore`, ".DS_Store\nnode_modules/\n.codex/\n");
+  writeFileSync(`${templatePath}/AGENTS.md`, "This is a managed workspace starter.\n");
 }

@@ -1,16 +1,30 @@
-import type { AgentConfig, CancelSignalDriver, OutboundMessage, QueueDriver, RepositoryBundle, Session } from "@carvis/core";
+import type {
+  AgentConfig,
+  CancelSignalDriver,
+  OutboundMessage,
+  QueueDriver,
+  RepositoryBundle,
+  RuntimeConfig,
+  Session,
+} from "@carvis/core";
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
 import { handleAbortCommand } from "../commands/abort.ts";
+import { handleBindCommand } from "../commands/bind.ts";
+import { handleHelpCommand } from "../commands/help.ts";
 import { handleNewCommand } from "../commands/new.ts";
 import { handleStatusCommand } from "../commands/status.ts";
+import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
+import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
 
 export function createFeishuWebhookHandler(input: {
   agentConfig: AgentConfig;
   adapter: FeishuAdapter;
   repositories: RepositoryBundle;
   queue: QueueDriver;
+  workspaceResolverConfig: RuntimeConfig["workspaceResolver"];
   cancelSignals: CancelSignalDriver;
+  logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   allowlist: {
     isAllowed(input: { chatId: string; userId: string }): boolean;
   };
@@ -21,6 +35,16 @@ export function createFeishuWebhookHandler(input: {
   now?: () => Date;
 }) {
   const now = input.now ?? (() => new Date());
+  const workspaceProvisioner = createWorkspaceProvisioner({
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+  });
+  const workspaceResolver = createWorkspaceResolver({
+    agentConfig: input.agentConfig,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+    workspaceProvisioner,
+  });
 
   return async function handle(rawBody: string, headers: Record<string, string | undefined>) {
     const verified = await input.adapter.verifyWebhook({
@@ -39,6 +63,14 @@ export function createFeishuWebhookHandler(input: {
     }
 
     const payload = JSON.parse(rawBody);
+    const messageText = (() => {
+      try {
+        const content = JSON.parse(payload.event.message.content) as { text?: string };
+        return content.text?.trim() ?? "";
+      } catch {
+        return "";
+      }
+    })();
     const envelope = await input.adapter.parseInbound(payload);
 
     if (!input.allowlist.isAllowed({ chatId: envelope.chatId, userId: envelope.userId })) {
@@ -58,12 +90,55 @@ export function createFeishuWebhookHandler(input: {
       now: now(),
     });
 
+    if (envelope.rawText !== messageText) {
+      input.logger?.commandState("mention_normalized", {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        normalizedText: envelope.rawText,
+        rawText: messageText,
+      });
+    }
+
+    if (envelope.command) {
+      input.logger?.commandState("recognized", {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        command: envelope.command,
+        normalizedText: envelope.rawText,
+      });
+    }
+
+    if (envelope.unknownCommand) {
+      input.logger?.commandState("unknown", {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        command: envelope.unknownCommand,
+        normalizedText: envelope.rawText,
+        reason: "unsupported_slash_command",
+      });
+      const message = await handleHelpCommand({
+        session,
+        chatType: envelope.chatType,
+        unknownCommand: envelope.unknownCommand,
+      });
+      await input.notifier.sendMessage(message);
+      return {
+        status: 200,
+        body: { ok: true },
+      };
+    }
+
     if (envelope.command === "status") {
       const message = await handleStatusCommand({
         session,
+        chatType: envelope.chatType,
         agentConfig: input.agentConfig,
         repositories: input.repositories,
         queue: input.queue,
+        workspaceResolverConfig: input.workspaceResolverConfig,
       });
       await input.notifier.sendMessage(message);
       return {
@@ -75,7 +150,6 @@ export function createFeishuWebhookHandler(input: {
     if (envelope.command === "abort") {
       const message = await handleAbortCommand({
         session,
-        agentConfig: input.agentConfig,
         repositories: input.repositories,
         cancelSignals: input.cancelSignals,
         now,
@@ -101,6 +175,36 @@ export function createFeishuWebhookHandler(input: {
       };
     }
 
+    if (envelope.command === "help") {
+      const message = await handleHelpCommand({
+        session,
+        chatType: envelope.chatType,
+      });
+      await input.notifier.sendMessage(message);
+      return {
+        status: 200,
+        body: { ok: true },
+      };
+    }
+
+    if (envelope.command === "bind") {
+      const message = await handleBindCommand({
+        session,
+        chatType: envelope.chatType,
+        workspaceKey: envelope.commandArgs[0] ?? null,
+        agentConfig: input.agentConfig,
+        repositories: input.repositories,
+        workspaceResolverConfig: input.workspaceResolverConfig,
+        logger: input.logger,
+        now,
+      });
+      await input.notifier.sendMessage(message);
+      return {
+        status: 200,
+        body: { ok: true },
+      };
+    }
+
     if (!envelope.prompt) {
       return {
         status: 400,
@@ -112,12 +216,46 @@ export function createFeishuWebhookHandler(input: {
     }
 
     const binding = await input.repositories.conversationSessionBindings.getBindingBySessionId(session.id);
+    const resolvedWorkspace = await workspaceResolver.resolveForPrompt({
+      session,
+      chatType: envelope.chatType,
+      now: now(),
+    });
+
+    if (resolvedWorkspace.kind === "unbound") {
+      input.logger?.workspaceResolutionState("unbound", {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        trigger: "prompt",
+      });
+      await input.notifier.sendMessage({
+        chatId: session.chatId,
+        runId: null,
+        kind: "status",
+        content: resolvedWorkspace.message,
+      });
+      return {
+        status: 200,
+        body: { ok: true, unbound: true },
+      };
+    }
+
+    input.logger?.workspaceResolutionState(resolvedWorkspace.bindingSource, {
+      agentId: input.agentConfig.id,
+      chatId: session.chatId,
+      sessionId: session.id,
+      workspaceKey: resolvedWorkspace.workspaceKey,
+      workspacePath: resolvedWorkspace.workspacePath,
+      trigger: "prompt",
+    });
+
     const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
-    const activeRun = await input.repositories.runs.findActiveRunByWorkspace(input.agentConfig.workspace);
+    const activeRun = await input.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
     const run = await input.repositories.runs.createQueuedRun({
       sessionId: session.id,
       agentId: input.agentConfig.id,
-      workspace: input.agentConfig.workspace,
+      workspace: resolvedWorkspace.workspacePath,
       prompt: envelope.prompt,
       triggerMessageId: envelope.messageId,
       triggerUserId: envelope.userId,
@@ -126,14 +264,14 @@ export function createFeishuWebhookHandler(input: {
       requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
       now: now(),
     });
-    const queuePosition = (await input.queue.enqueue(input.agentConfig.workspace, run.id)) + (activeRun ? 1 : 0);
+    const queuePosition = (await input.queue.enqueue(resolvedWorkspace.workspacePath, run.id)) + (activeRun ? 1 : 0);
     await input.repositories.runs.updateQueuePosition(run.id, queuePosition);
     const queuedEvent = await input.repositories.events.appendEvent({
       runId: run.id,
       eventType: "run.queued",
       payload: {
         run_id: run.id,
-        workspace: input.agentConfig.workspace,
+        workspace: resolvedWorkspace.workspacePath,
         queue_position: queuePosition,
       },
       now: now(),

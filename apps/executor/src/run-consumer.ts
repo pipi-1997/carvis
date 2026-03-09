@@ -18,58 +18,65 @@ export function createRunConsumer(input: {
 
   return {
     async processNext(): Promise<boolean> {
-      const activeRunId = input.workspaceLocks.getActiveRunId(input.agentConfig.workspace);
-      if ((activeRunId instanceof Promise ? await activeRunId : activeRunId)) {
-        return false;
-      }
+      const queuedWorkspaces = input.queue.listWorkspaces();
+      const workspaces = queuedWorkspaces instanceof Promise ? await queuedWorkspaces : queuedWorkspaces;
 
-      const dequeuedRunId = input.queue.dequeue(input.agentConfig.workspace);
-      const runId = dequeuedRunId instanceof Promise ? await dequeuedRunId : dequeuedRunId;
-      if (!runId) {
-        return false;
-      }
-
-      const run = await input.repositories.runs.getRunById(runId);
-      if (!run) {
-        return false;
-      }
-
-      const acquireResult = input.workspaceLocks.acquire(run.workspace, run.id);
-      const locked = acquireResult instanceof Promise ? await acquireResult : acquireResult;
-      if (!locked) {
-        const enqueued = input.queue.enqueue(run.workspace, run.id);
-        if (enqueued instanceof Promise) {
-          await enqueued;
-        }
-        return false;
-      }
-
-      try {
-        const session = await input.repositories.sessions.getSessionById(run.sessionId);
-        if (!session) {
-          throw new Error(`session not found: ${run.sessionId}`);
+      for (const workspace of workspaces) {
+        const activeRunId = input.workspaceLocks.getActiveRunId(workspace);
+        if ((activeRunId instanceof Promise ? await activeRunId : activeRunId)) {
+          continue;
         }
 
-        await input.repositories.runs.markRunStarted(run.id, now().toISOString());
-        const startedEvent = await input.repositories.events.appendEvent({
-          runId: run.id,
-          eventType: "run.started",
-          payload: {
-            run_id: run.id,
-            workspace: run.workspace,
-            started_at: now().toISOString(),
-          },
-          now: now(),
-        });
-        await input.notifier.notifyRunEvent(session, startedEvent);
-        await input.runController.execute(run);
-        return true;
-      } finally {
-        const released = input.workspaceLocks.release(run.workspace, run.id);
-        if (released instanceof Promise) {
-          await released;
+        const dequeuedRunId = input.queue.dequeue(workspace);
+        const runId = dequeuedRunId instanceof Promise ? await dequeuedRunId : dequeuedRunId;
+        if (!runId) {
+          continue;
+        }
+
+        const run = await input.repositories.runs.getRunById(runId);
+        if (!run) {
+          continue;
+        }
+
+        const acquireResult = input.workspaceLocks.acquire(run.workspace, run.id);
+        const locked = acquireResult instanceof Promise ? await acquireResult : acquireResult;
+        if (!locked) {
+          const enqueued = input.queue.enqueue(run.workspace, run.id);
+          if (enqueued instanceof Promise) {
+            await enqueued;
+          }
+          continue;
+        }
+
+        try {
+          const session = await input.repositories.sessions.getSessionById(run.sessionId);
+          if (!session) {
+            throw new Error(`session not found: ${run.sessionId}`);
+          }
+
+          await input.repositories.runs.markRunStarted(run.id, now().toISOString());
+          const startedEvent = await input.repositories.events.appendEvent({
+            runId: run.id,
+            eventType: "run.started",
+            payload: {
+              run_id: run.id,
+              workspace: run.workspace,
+              started_at: now().toISOString(),
+            },
+            now: now(),
+          });
+          await input.notifier.notifyRunEvent(session, startedEvent);
+          await input.runController.execute(run);
+          return true;
+        } finally {
+          const released = input.workspaceLocks.release(run.workspace, run.id);
+          if (released instanceof Promise) {
+            await released;
+          }
         }
       }
+
+      return false;
     },
   };
 }

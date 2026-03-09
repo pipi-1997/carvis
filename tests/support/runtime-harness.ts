@@ -6,7 +6,7 @@ type RuntimeConfigFixture = {
   agent: {
     id: string;
     bridge: string;
-    workspace: string;
+    defaultWorkspace: string;
     timeoutSeconds: number;
     maxConcurrent: number;
   };
@@ -21,10 +21,33 @@ type RuntimeConfigFixture = {
     allowFrom: string[];
     requireMention: boolean;
   };
+  workspaceResolver: {
+    registry: Record<string, string>;
+    chatBindings: Record<string, string>;
+    managedWorkspaceRoot: string;
+    templatePath: string;
+  };
 };
 
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K];
+};
+
+function mergeStringRecord(
+  base: Record<string, string>,
+  override?: DeepPartial<Record<string, string>>,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...base };
+  for (const [key, value] of Object.entries(override ?? {})) {
+    if (typeof value === "string") {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 type RuntimeHarnessOptions = {
-  config?: Partial<RuntimeConfigFixture>;
+  config?: DeepPartial<RuntimeConfigFixture>;
   env?: Partial<Record<string, string>>;
   presentation?: {
     failCardCreate?: boolean;
@@ -39,29 +62,11 @@ type RuntimeHarness = {
     configDir: string;
     configFile: string;
     homeDir: string;
+    defaultWorkspaceDir: string;
+    managedWorkspaceRoot: string;
+    templateDir: string;
   };
   writeConfig: (config: RuntimeConfigFixture) => Promise<void>;
-};
-
-const DEFAULT_RUNTIME_CONFIG: RuntimeConfigFixture = {
-  agent: {
-    id: "codex-main",
-    bridge: "codex",
-    workspace: "/tmp/carvis-runtime-workspace",
-    timeoutSeconds: 60,
-    maxConcurrent: 1,
-  },
-  gateway: {
-    port: 8787,
-    healthPath: "/healthz",
-  },
-  executor: {
-    pollIntervalMs: 1000,
-  },
-  feishu: {
-    allowFrom: ["*"],
-    requireMention: false,
-  },
 };
 
 const DEFAULT_ENV = {
@@ -73,7 +78,7 @@ const DEFAULT_ENV = {
 
 function mergeRuntimeConfig(
   baseConfig: RuntimeConfigFixture,
-  overrideConfig?: Partial<RuntimeConfigFixture>,
+  overrideConfig?: DeepPartial<RuntimeConfigFixture>,
 ): RuntimeConfigFixture {
   if (!overrideConfig) {
     return baseConfig;
@@ -98,6 +103,50 @@ function mergeRuntimeConfig(
       ...baseConfig.feishu,
       ...overrideConfig.feishu,
     },
+    workspaceResolver: {
+      ...baseConfig.workspaceResolver,
+      ...overrideConfig.workspaceResolver,
+      registry: mergeStringRecord(baseConfig.workspaceResolver.registry, overrideConfig.workspaceResolver?.registry),
+      chatBindings: mergeStringRecord(
+        baseConfig.workspaceResolver.chatBindings,
+        overrideConfig.workspaceResolver?.chatBindings,
+      ),
+    },
+  };
+}
+
+function createDefaultRuntimeConfig(paths: {
+  defaultWorkspaceDir: string;
+  managedWorkspaceRoot: string;
+  templateDir: string;
+}): RuntimeConfigFixture {
+  return {
+    agent: {
+      id: "codex-main",
+      bridge: "codex",
+      defaultWorkspace: "main",
+      timeoutSeconds: 60,
+      maxConcurrent: 1,
+    },
+    gateway: {
+      port: 8787,
+      healthPath: "/healthz",
+    },
+    executor: {
+      pollIntervalMs: 1000,
+    },
+    feishu: {
+      allowFrom: ["*"],
+      requireMention: false,
+    },
+    workspaceResolver: {
+      registry: {
+        main: paths.defaultWorkspaceDir,
+      },
+      chatBindings: {},
+      managedWorkspaceRoot: paths.managedWorkspaceRoot,
+      templatePath: paths.templateDir,
+    },
   };
 }
 
@@ -107,10 +156,23 @@ export async function createRuntimeHarness(
   const homeDir = await mkdtemp(join(tmpdir(), "carvis-runtime-"));
   const configDir = join(homeDir, ".carvis");
   const configFile = join(configDir, "config.json");
-  const config = mergeRuntimeConfig(DEFAULT_RUNTIME_CONFIG, options.config);
+  const managedWorkspaceRoot = join(homeDir, "managed-workspaces");
+  const defaultWorkspaceDir = join(managedWorkspaceRoot, "main");
+  const templateDir = join(homeDir, "templates", "default-workspace");
+  const config = mergeRuntimeConfig(
+    createDefaultRuntimeConfig({
+      defaultWorkspaceDir,
+      managedWorkspaceRoot,
+      templateDir,
+    }),
+    options.config,
+  );
 
   await mkdir(configDir, { recursive: true });
-  await mkdir(config.agent.workspace, { recursive: true });
+  await mkdir(defaultWorkspaceDir, { recursive: true });
+  await mkdir(config.workspaceResolver.managedWorkspaceRoot, { recursive: true });
+  await mkdir(config.workspaceResolver.templatePath, { recursive: true });
+  await writeStarterTemplate(config.workspaceResolver.templatePath);
   await writeFile(configFile, JSON.stringify(config, null, 2));
 
   return {
@@ -128,9 +190,21 @@ export async function createRuntimeHarness(
       configDir,
       configFile,
       homeDir,
+      defaultWorkspaceDir,
+      managedWorkspaceRoot: config.workspaceResolver.managedWorkspaceRoot,
+      templateDir: config.workspaceResolver.templatePath,
     },
     async writeConfig(nextConfig: RuntimeConfigFixture) {
       await writeFile(configFile, JSON.stringify(nextConfig, null, 2));
     },
   };
+}
+
+async function writeStarterTemplate(templateDir: string) {
+  await writeFile(join(templateDir, "README.md"), "# runtime template\n\nManaged workspace starter.\n");
+  await writeFile(join(templateDir, ".gitignore"), ".DS_Store\nnode_modules/\n.codex/\n");
+  await writeFile(
+    join(templateDir, "AGENTS.md"),
+    "This is a managed workspace starter. Keep work local to this directory.\n",
+  );
 }
