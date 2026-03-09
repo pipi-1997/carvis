@@ -40,6 +40,23 @@ describe("FeishuAdapter", () => {
     expect(envelope.prompt).toBeNull();
   });
 
+  test("将 /new 识别为命令而不是运行请求", async () => {
+    const adapter = new FeishuAdapter({
+      signingSecret: "test-secret",
+      sender: {
+        addReaction: async () => {},
+        removeReaction: async () => {},
+        sendMessage: async () => ({ messageId: "delivery-1" }),
+      },
+    });
+    const payload = createFeishuPayload("/new");
+
+    const envelope = await adapter.parseInbound(payload);
+
+    expect(envelope.command).toBe("new");
+    expect(envelope.prompt).toBeNull();
+  });
+
   test("只接受通过签名校验的 webhook", async () => {
     const adapter = new FeishuAdapter({
       signingSecret: "test-secret",

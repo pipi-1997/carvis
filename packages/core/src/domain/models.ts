@@ -1,6 +1,16 @@
 export type Channel = "feishu";
 export type SessionStatus = "active" | "disabled";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type SessionMode = "fresh" | "continuation";
+export type ConversationSessionBindingStatus = "unbound" | "bound" | "reset" | "invalidated" | "recovered";
+export type ConversationSessionRecoveryResult = "recovered" | "failed";
+export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
+export type ConversationSessionMemoryState =
+  | "fresh"
+  | "continued"
+  | "recent_reset"
+  | "recent_recovered"
+  | "recent_recovery_failed";
 export type DeliveryStatus = "pending" | "sent" | "failed";
 export type DeliveryKind =
   | "status"
@@ -11,7 +21,7 @@ export type DeliveryKind =
   | "card_update"
   | "card_complete"
   | "fallback_terminal";
-export type CommandName = "status" | "abort" | null;
+export type CommandName = "status" | "abort" | "new" | null;
 export type RunEventType =
   | "run.queued"
   | "run.started"
@@ -46,6 +56,26 @@ export interface Session {
   lastSeenAt: string;
 }
 
+export interface ConversationSessionBinding {
+  sessionId: string;
+  chatId: string;
+  agentId: string;
+  workspace: string;
+  bridge: AgentConfig["bridge"];
+  bridgeSessionId: string | null;
+  mode: SessionMode;
+  status: ConversationSessionBindingStatus;
+  lastBoundAt: string | null;
+  lastUsedAt: string | null;
+  lastResetAt: string | null;
+  lastInvalidatedAt: string | null;
+  lastInvalidationReason: string | null;
+  lastRecoveryAt: string | null;
+  lastRecoveryResult: ConversationSessionRecoveryResult | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RunRequest {
   id: string;
   sessionId: string;
@@ -55,6 +85,8 @@ export interface RunRequest {
   triggerMessageId: string;
   triggerUserId: string;
   timeoutSeconds: number;
+  bridgeSessionId?: string | null;
+  sessionMode?: SessionMode;
   createdAt: string;
 }
 
@@ -68,6 +100,11 @@ export interface Run {
   triggerMessageId: string;
   triggerUserId: string;
   timeoutSeconds: number;
+  requestedSessionMode: SessionMode;
+  requestedBridgeSessionId: string | null;
+  resolvedBridgeSessionId: string | null;
+  sessionRecoveryAttempted: boolean;
+  sessionRecoveryResult: ConversationSessionRecoveryResult | null;
   queuePosition: number | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -161,6 +198,7 @@ export interface StatusSnapshot {
   latestRun: Run | null;
   isLatestRunQueued: boolean;
   aheadCount: number;
+  continuationState: ConversationSessionMemoryState;
 }
 
 export interface QueueInfo {

@@ -56,6 +56,77 @@ describe("feishu runtime sender", () => {
     });
   });
 
+  test("收到 invalid access token 后会刷新 tenant token 并重试一次", async () => {
+    const requests: Array<{ url: string; method: string; body: string | undefined; auth?: string | null }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+          auth: init?.headers instanceof Headers
+            ? init.headers.get("Authorization")
+            : Array.isArray(init?.headers)
+              ? null
+              : typeof init?.headers === "object" && init?.headers
+                ? String(Reflect.get(init.headers, "Authorization") ?? "")
+                : null,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "stale-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 2) {
+          return new Response(
+            JSON.stringify({
+              code: 99991663,
+              msg: "Invalid access token for authorization. Please make a request with token attached.",
+            }),
+            { status: 401 },
+          );
+        }
+
+        if (requests.length === 3) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "fresh-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              message_id: "om_retry_ok",
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await sender.sendMessage({
+      chatId: "oc_test_chat",
+      runId: "run-retry",
+      kind: "result",
+      content: "重试成功",
+    } satisfies OutboundMessage);
+
+    expect(result).toEqual({ messageId: "om_retry_ok" });
+    expect(requests).toHaveLength(4);
+    expect(requests[1]?.auth).toBe("Bearer stale-token");
+    expect(requests[3]?.auth).toBe("Bearer fresh-token");
+  });
+
   test("对原消息添加并移除工作中表情", async () => {
     const requests: Array<{ url: string; method: string; body: string | undefined }> = [];
     const sender = createFeishuRuntimeSender({

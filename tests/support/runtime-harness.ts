@@ -110,6 +110,7 @@ export async function createRuntimeHarness(
   const config = mergeRuntimeConfig(DEFAULT_RUNTIME_CONFIG, options.config);
 
   await mkdir(configDir, { recursive: true });
+  await mkdir(config.agent.workspace, { recursive: true });
   await writeFile(configFile, JSON.stringify(config, null, 2));
 
   return {

@@ -22,7 +22,7 @@ describe("CodexBridge", () => {
         { type: "delta", deltaText: "正在", sequence: 1, source: "assistant" },
         { type: "delta", deltaText: "分析", sequence: 2, source: "assistant" },
         { type: "summary", summary: "正在分析", sequence: 1 },
-        { type: "result", resultSummary: "总结完成" },
+        { type: "result", resultSummary: "总结完成", bridgeSessionId: "thread-001", sessionOutcome: "created" },
       ]),
       now: () => new Date("2026-03-08T00:00:00.000Z"),
     });
@@ -54,9 +54,50 @@ describe("CodexBridge", () => {
       sequence: 2,
       source: "assistant",
     });
+    expect(events[3]?.payload).toEqual({
+      run_id: "run-001",
+      finished_at: "2026-03-08T00:00:00.000Z",
+      result_summary: "总结完成",
+      bridge_session_id: "thread-001",
+      session_outcome: "created",
+    });
     expect(await bridge.healthcheck()).toEqual({
       ok: true,
       message: "codex bridge ready",
+    });
+  });
+
+  test("续聊模式会把 bridge session 元数据带到完成事件", async () => {
+    const bridge = new CodexBridge({
+      transport: createScriptedCodexTransport([
+        {
+          type: "result",
+          resultSummary: "继续上下文完成",
+          bridgeSessionId: "thread-continued",
+          sessionOutcome: "continued",
+        },
+      ]),
+      now: () => new Date("2026-03-08T00:00:00.000Z"),
+    });
+
+    const handle = await bridge.startRun({
+      ...baseRequest,
+      bridgeSessionId: "thread-continued",
+      sessionMode: "continuation",
+    });
+    const events = [];
+    for await (const event of handle.streamEvents()) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("run.completed");
+    expect(events[0]?.payload).toEqual({
+      run_id: "run-001",
+      finished_at: "2026-03-08T00:00:00.000Z",
+      result_summary: "继续上下文完成",
+      bridge_session_id: "thread-continued",
+      session_outcome: "continued",
     });
   });
 
@@ -77,5 +118,38 @@ describe("CodexBridge", () => {
     }
 
     expect(events).toEqual(["run.cancelled"]);
+  });
+
+  test("底层续聊 session 无效时会在失败事件中标记 session_invalid", async () => {
+    const bridge = new CodexBridge({
+      transport: createScriptedCodexTransport([
+        {
+          type: "error",
+          failureCode: "codex_exec_failed",
+          failureMessage: "session not found",
+          sessionInvalid: true,
+        },
+      ]),
+      now: () => new Date("2026-03-08T00:00:00.000Z"),
+    });
+
+    const handle = await bridge.startRun({
+      ...baseRequest,
+      bridgeSessionId: "thread-missing",
+      sessionMode: "continuation",
+    });
+    const events = [];
+    for await (const event of handle.streamEvents()) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("run.failed");
+    expect(events[0]?.payload).toEqual({
+      run_id: "run-001",
+      failure_code: "codex_exec_failed",
+      failure_message: "session not found",
+      session_invalid: true,
+    });
   });
 });

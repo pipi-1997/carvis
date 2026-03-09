@@ -56,4 +56,30 @@ describe("runtime logger", () => {
       },
     });
   });
+
+  test("续聊绑定状态变更会输出结构化日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.continuationBindingState("bound", {
+      agentId: "codex-main",
+      chatId: "chat-001",
+      runId: "run-001",
+      sessionId: "session-001",
+      bridgeSessionId: "thread-001",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "info",
+      message: "continuation.binding.bound",
+      context: {
+        agentId: "codex-main",
+        bridgeSessionId: "thread-001",
+        chatId: "chat-001",
+        role: "executor",
+        runId: "run-001",
+        sessionId: "session-001",
+        status: "bound",
+      },
+    });
+  });
 });

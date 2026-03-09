@@ -136,7 +136,14 @@ export function normalizeFeishuWebsocketEvent(
     };
   }
 
-  const command = rawText === "/status" ? "status" : rawText === "/abort" ? "abort" : null;
+  const command =
+    rawText === "/status"
+      ? "status"
+      : rawText === "/abort"
+        ? "abort"
+        : rawText === "/new"
+          ? "new"
+          : null;
 
   return {
     accepted: true,

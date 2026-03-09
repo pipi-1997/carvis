@@ -65,7 +65,7 @@ export class FeishuAdapter {
   async parseInbound(payload: FeishuWebhookPayload): Promise<InboundEnvelope> {
     const content = JSON.parse(payload.event.message.content) as { text?: string };
     const rawText = (content.text ?? "").trim();
-    const command = rawText === "/status" ? "status" : rawText === "/abort" ? "abort" : null;
+    const command = rawText === "/status" ? "status" : rawText === "/abort" ? "abort" : rawText === "/new" ? "new" : null;
 
     return {
       channel: "feishu",

@@ -3,8 +3,13 @@ import type { RunEvent, RunRequest } from "@carvis/core";
 type TransportChunk =
   | { type: "delta"; deltaText: string; sequence: number; source?: string }
   | { type: "summary"; summary: string; sequence: number }
-  | { type: "result"; resultSummary: string }
-  | { type: "error"; failureCode: string; failureMessage: string }
+  | {
+      type: "result";
+      resultSummary: string;
+      bridgeSessionId?: string;
+      sessionOutcome?: "created" | "continued" | "unchanged";
+    }
+  | { type: "error"; failureCode: string; failureMessage: string; sessionInvalid?: boolean }
   | { type: "cancelled"; reason?: string }
   | { type: "wait-for-cancel" };
 
@@ -87,6 +92,8 @@ export class CodexBridge {
                   run_id: request.id,
                   finished_at: now().toISOString(),
                   result_summary: chunk.resultSummary,
+                  ...(chunk.bridgeSessionId ? { bridge_session_id: chunk.bridgeSessionId } : {}),
+                  ...(chunk.sessionOutcome ? { session_outcome: chunk.sessionOutcome } : {}),
                 },
                 createdAt: now().toISOString(),
               } satisfies RunEvent;
@@ -102,6 +109,7 @@ export class CodexBridge {
                   run_id: request.id,
                   failure_code: chunk.failureCode,
                   failure_message: chunk.failureMessage,
+                  ...(chunk.sessionInvalid !== undefined ? { session_invalid: chunk.sessionInvalid } : {}),
                 },
                 createdAt: now().toISOString(),
               } satisfies RunEvent;

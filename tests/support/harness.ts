@@ -7,8 +7,9 @@ import { createPresentationOrchestrator } from "../../apps/gateway/src/services/
 import { createRunNotifier } from "../../apps/gateway/src/services/run-notifier.ts";
 import { createRunReaper } from "../../apps/gateway/src/services/run-reaper.ts";
 import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
+import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
-import type { AgentConfig, OutboundMessage, RunStatus } from "../../packages/core/src/domain/models.ts";
+import type { AgentConfig, OutboundMessage, RunRequest, RunStatus } from "../../packages/core/src/domain/models.ts";
 import { createInMemoryRepositories } from "../../packages/core/src/storage/repositories.ts";
 import { CancelSignalStore } from "../../packages/core/src/runtime/cancel-signal.ts";
 import { HeartbeatMonitor } from "../../packages/core/src/runtime/heartbeat.ts";
@@ -69,6 +70,7 @@ export function createFeishuPayload(text: string, overrides?: Partial<Record<str
 }
 
 export function createHarness(options?: {
+  transport?: CodexTransport;
   transportScript?: Parameters<typeof createScriptedCodexTransport>[0];
   heartbeatTtlMs?: number;
   allowChatIds?: string[];
@@ -92,6 +94,7 @@ export function createHarness(options?: {
     messageId: string;
   }> = [];
   const sentMessages: OutboundMessage[] = [];
+  const bridgeRequests: RunRequest[] = [];
   const presentationOperations: Array<
     | {
         action: "create-card";
@@ -228,13 +231,23 @@ export function createHarness(options?: {
     presentationOrchestrator,
     repositories,
   });
-  const bridge = new CodexBridge({
-    transport: createScriptedCodexTransport(
+  const transport =
+    options?.transport ??
+    createScriptedCodexTransport(
       options?.transportScript ?? [
         { type: "summary", summary: "正在分析仓库", sequence: 1 },
         { type: "result", resultSummary: "仓库目标已总结" },
       ],
-    ),
+    );
+  const bridge = new CodexBridge({
+    transport: {
+      async *run(request, input) {
+        bridgeRequests.push(request);
+        for await (const chunk of transport.run(request, input)) {
+          yield chunk;
+        }
+      },
+    },
     now,
   });
   const gateway = createGatewayApp({
@@ -315,6 +328,7 @@ export function createHarness(options?: {
     },
     adapter,
     bridge,
+    bridgeRequests,
     cancelSignals,
     executor,
     gateway,

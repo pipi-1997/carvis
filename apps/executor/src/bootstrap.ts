@@ -84,6 +84,7 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
     cancelSignals: services.cancelSignals,
     heartbeats: services.heartbeats,
     bridge,
+    logger: services.logger,
     notifier,
   });
 

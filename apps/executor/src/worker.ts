@@ -19,6 +19,7 @@ export function createExecutorWorker(input: {
   cancelSignals: CancelSignalDriver;
   heartbeats: HeartbeatDriver;
   bridge: CodexBridge;
+  logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   notifier: {
     notifyRunEvent(session: { chatId: string }, event: { eventType: string; payload: Record<string, unknown>; runId: string }): Promise<void>;
   };
@@ -30,6 +31,7 @@ export function createExecutorWorker(input: {
     cancelSignals: input.cancelSignals,
     heartbeats: input.heartbeats,
     bridge: input.bridge,
+    logger: input.logger,
     notifier: input.notifier,
     now: input.now,
   });

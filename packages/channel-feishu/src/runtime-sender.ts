@@ -76,78 +76,99 @@ export function createFeishuRuntimeSender(
     return tenantAccessToken;
   }
 
+  async function withTenantAccessToken<T>(operation: (token: string) => Promise<T>): Promise<T> {
+    let refreshed = false;
+
+    while (true) {
+      const token = await getTenantAccessToken();
+      try {
+        return await operation(token);
+      } catch (error) {
+        if (refreshed || !isInvalidAccessTokenError(error)) {
+          throw error;
+        }
+
+        tenantAccessToken = null;
+        refreshed = true;
+      }
+    }
+  }
+
   return {
     async addReaction(messageId, emojiType) {
-      const token = await getTenantAccessToken();
-      const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-          reaction_type: {
-            emoji_type: emojiType,
+      await withTenantAccessToken(async (token) => {
+        const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json; charset=utf-8",
           },
-        }),
-      });
-      const parsed = (await response.json()) as {
-        code?: number;
-        msg?: string;
-      };
+          body: JSON.stringify({
+            reaction_type: {
+              emoji_type: emojiType,
+            },
+          }),
+        });
+        const parsed = (await response.json()) as {
+          code?: number;
+          msg?: string;
+        };
 
-      if (!response.ok || parsed.code !== 0) {
-        throw new Error(parsed.msg ?? "feishu add reaction failed");
-      }
+        if (!response.ok || parsed.code !== 0) {
+          throw new Error(parsed.msg ?? "feishu add reaction failed");
+        }
+      });
     },
     async completeCard(input) {
       if (options.failCardUpdate) {
         throw new Error("feishu complete card failed");
       }
 
-      const token = await getTenantAccessToken();
-      const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${input.cardId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-          content: JSON.stringify(
-            buildInteractiveCard({
-              body: input.body,
-              status: input.status,
-              title: input.title,
-            }),
-          ),
-        }),
-      });
-      const parsed = (await response.json()) as {
-        code?: number;
-        msg?: string;
-      };
+      await withTenantAccessToken(async (token) => {
+        const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${input.cardId}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            content: JSON.stringify(
+              buildInteractiveCard({
+                body: input.body,
+                status: input.status,
+                title: input.title,
+              }),
+            ),
+          }),
+        });
+        const parsed = (await response.json()) as {
+          code?: number;
+          msg?: string;
+        };
 
-      if (!response.ok || (parsed.code !== undefined && parsed.code !== 0)) {
-        throw new Error(parsed.msg ?? "feishu complete card failed");
-      }
+        if (!response.ok || (parsed.code !== undefined && parsed.code !== 0)) {
+          throw new Error(parsed.msg ?? "feishu complete card failed");
+        }
+      });
     },
     async createCard(input) {
       if (options.failCardCreate) {
         throw new Error("feishu create card failed");
       }
 
-      const token = await getTenantAccessToken();
       const card = buildInteractiveCard({
         body: input.body,
         title: input.title,
       });
-      const messageId = await sendFeishuMessage(fetchImpl, token, {
-        chatId: input.chatId,
-        msgType: "interactive",
-        payload: {
-          card,
-        },
-      });
+      const messageId = await withTenantAccessToken((token) =>
+        sendFeishuMessage(fetchImpl, token, {
+          chatId: input.chatId,
+          msgType: "interactive",
+          payload: {
+            card,
+          },
+        }),
+      );
 
       return {
         messageId,
@@ -156,98 +177,101 @@ export function createFeishuRuntimeSender(
       };
     },
     async removeReaction(messageId, emojiType) {
-      const token = await getTenantAccessToken();
-      const listUrl = new URL(`${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions`);
-      listUrl.searchParams.set("reaction_type", emojiType);
-      const listResponse = await fetchImpl(listUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const listed = (await listResponse.json()) as {
-        code?: number;
-        data?: {
-          items?: Array<{
-            operator?: {
-              operator_type: "app" | "user";
-            };
-            reaction_id?: string;
-            reaction_type?: {
-              emoji_type: string;
-            };
-          }>;
-        };
-        msg?: string;
-      };
-
-      if (!listResponse.ok || listed.code !== 0) {
-        throw new Error(listed.msg ?? "feishu list reaction failed");
-      }
-
-      const reactionId = listed.data?.items?.find((item) => {
-        return item.operator?.operator_type === "app" && item.reaction_type?.emoji_type === emojiType;
-      })?.reaction_id;
-
-      if (!reactionId) {
-        return;
-      }
-
-      const deleteResponse = await fetchImpl(
-        `${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions/${reactionId}`,
-        {
-          method: "DELETE",
+      await withTenantAccessToken(async (token) => {
+        const listUrl = new URL(`${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions`);
+        listUrl.searchParams.set("reaction_type", emojiType);
+        const listResponse = await fetchImpl(listUrl, {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        },
-      );
-      const deleted = (await deleteResponse.json()) as {
-        code?: number;
-        msg?: string;
-      };
+        });
+        const listed = (await listResponse.json()) as {
+          code?: number;
+          data?: {
+            items?: Array<{
+              operator?: {
+                operator_type: "app" | "user";
+              };
+              reaction_id?: string;
+              reaction_type?: {
+                emoji_type: string;
+              };
+            }>;
+          };
+          msg?: string;
+        };
 
-      if (!deleteResponse.ok || deleted.code !== 0) {
-        throw new Error(deleted.msg ?? "feishu delete reaction failed");
-      }
+        if (!listResponse.ok || listed.code !== 0) {
+          throw new Error(listed.msg ?? "feishu list reaction failed");
+        }
+
+        const reactionId = listed.data?.items?.find((item) => {
+          return item.operator?.operator_type === "app" && item.reaction_type?.emoji_type === emojiType;
+        })?.reaction_id;
+
+        if (!reactionId) {
+          return;
+        }
+
+        const deleteResponse = await fetchImpl(
+          `${FEISHU_API_BASE_URL}/im/v1/messages/${messageId}/reactions/${reactionId}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const deleted = (await deleteResponse.json()) as {
+          code?: number;
+          msg?: string;
+        };
+
+        if (!deleteResponse.ok || deleted.code !== 0) {
+          throw new Error(deleted.msg ?? "feishu delete reaction failed");
+        }
+      });
     },
     async sendMessage(message) {
-      const token = await getTenantAccessToken();
-      const messageId = await sendFeishuMessage(fetchImpl, token, {
-        chatId: message.chatId,
-        msgType: "text",
-        payload: {
-          content: {
-            text: message.content,
+      const messageId = await withTenantAccessToken((token) =>
+        sendFeishuMessage(fetchImpl, token, {
+          chatId: message.chatId,
+          msgType: "text",
+          payload: {
+            content: {
+              text: message.content,
+            },
           },
-        },
-      });
+        }),
+      );
 
       return { messageId };
     },
     async sendFallbackTerminal(input) {
-      const token = await getTenantAccessToken();
-      const messageId = await sendFeishuMessage(fetchImpl, token, {
-        chatId: input.chatId,
-        msgType: "post",
-        payload: {
-          content: {
-            post: {
-              zh_cn: {
-                title: input.title,
-                content: [
-                  [
-                    {
-                      tag: "text",
-                      text: input.content,
-                    },
+      const messageId = await withTenantAccessToken((token) =>
+        sendFeishuMessage(fetchImpl, token, {
+          chatId: input.chatId,
+          msgType: "post",
+          payload: {
+            content: {
+              post: {
+                zh_cn: {
+                  title: input.title,
+                  content: [
+                    [
+                      {
+                        tag: "text",
+                        text: input.content,
+                      },
+                    ],
                   ],
-                ],
+                },
               },
             },
           },
-        },
-      });
+        }),
+      );
 
       return { messageId };
     },
@@ -256,31 +280,32 @@ export function createFeishuRuntimeSender(
         throw new Error("feishu update card failed");
       }
 
-      const token = await getTenantAccessToken();
-      const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${input.cardId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-          content: JSON.stringify(
-            buildInteractiveCard({
-              body: input.text,
-              elementId: input.elementId,
-              title: "运行中",
-            }),
-          ),
-        }),
-      });
-      const parsed = (await response.json()) as {
-        code?: number;
-        msg?: string;
-      };
+      await withTenantAccessToken(async (token) => {
+        const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/messages/${input.cardId}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            content: JSON.stringify(
+              buildInteractiveCard({
+                body: input.text,
+                elementId: input.elementId,
+                title: "运行中",
+              }),
+            ),
+          }),
+        });
+        const parsed = (await response.json()) as {
+          code?: number;
+          msg?: string;
+        };
 
-      if (!response.ok || (parsed.code !== undefined && parsed.code !== 0)) {
-        throw new Error(parsed.msg ?? "feishu update card failed");
-      }
+        if (!response.ok || (parsed.code !== undefined && parsed.code !== 0)) {
+          throw new Error(parsed.msg ?? "feishu update card failed");
+        }
+      });
     },
   };
 }
@@ -385,3 +410,11 @@ const STATUS_TEMPLATES = {
   completed: "green",
   failed: "red",
 } as const;
+
+function isInvalidAccessTokenError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.toLowerCase().includes("invalid access token");
+}
