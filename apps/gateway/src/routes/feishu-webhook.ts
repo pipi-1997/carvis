@@ -2,6 +2,7 @@ import type { AgentConfig, CancelSignalDriver, OutboundMessage, QueueDriver, Rep
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
 import { handleAbortCommand } from "../commands/abort.ts";
+import { handleNewCommand } from "../commands/new.ts";
 import { handleStatusCommand } from "../commands/status.ts";
 
 export function createFeishuWebhookHandler(input: {
@@ -86,6 +87,20 @@ export function createFeishuWebhookHandler(input: {
       };
     }
 
+    if (envelope.command === "new") {
+      const message = await handleNewCommand({
+        session,
+        agentConfig: input.agentConfig,
+        repositories: input.repositories,
+        now,
+      });
+      await input.notifier.sendMessage(message);
+      return {
+        status: 200,
+        body: { ok: true },
+      };
+    }
+
     if (!envelope.prompt) {
       return {
         status: 400,
@@ -96,6 +111,8 @@ export function createFeishuWebhookHandler(input: {
       };
     }
 
+    const binding = await input.repositories.conversationSessionBindings.getBindingBySessionId(session.id);
+    const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
     const activeRun = await input.repositories.runs.findActiveRunByWorkspace(input.agentConfig.workspace);
     const run = await input.repositories.runs.createQueuedRun({
       sessionId: session.id,
@@ -105,6 +122,8 @@ export function createFeishuWebhookHandler(input: {
       triggerMessageId: envelope.messageId,
       triggerUserId: envelope.userId,
       timeoutSeconds: input.agentConfig.timeoutSeconds,
+      requestedSessionMode,
+      requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
       now: now(),
     });
     const queuePosition = (await input.queue.enqueue(input.agentConfig.workspace, run.id)) + (activeRun ? 1 : 0);

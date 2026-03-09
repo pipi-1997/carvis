@@ -1,6 +1,6 @@
 # 架构图
 
-本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring` 和 `003-feishu-cardkit-results` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现`。
+本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring`、`003-feishu-cardkit-results` 和 `004-codex-session-memory` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现 + 同 chat Codex 原生 session 续聊`。
 
 ## 1. 运行时拓扑（当前实现）
 
@@ -13,7 +13,7 @@ flowchart TB
     subgraph Gateway["apps/gateway"]
         GW_HTTP["Hono HTTP 服务\n/healthz"]
         GW_WS["Feishu websocket ingress"]
-        GW_ROUTE["会话与命令路由\n/status /abort / 普通消息"]
+        GW_ROUTE["会话与命令路由\n/status /abort /new / 普通消息"]
         GW_NOTIFY["通知服务"]
         GW_PRESENT["Presentation Orchestrator\n输出窗口 / 卡片 / fallback"]
         GW_REAPER["Heartbeat Reaper"]
@@ -24,7 +24,7 @@ flowchart TB
     end
 
     subgraph Core["packages/core"]
-        CORE_DOMAIN["领域模型\nSession / Run / RunEvent /\nOutboundDelivery / RunPresentation"]
+        CORE_DOMAIN["领域模型\nSession / ConversationSessionBinding /\nRun / RunEvent / OutboundDelivery /\nRunPresentation"]
         CORE_RUNTIME["Queue / Lock /\nCancelSignal / Heartbeat"]
         CORE_STORE["配置 + 持久化仓储"]
     end
@@ -94,22 +94,23 @@ sequenceDiagram
     participant B as CodexBridge
     participant X as Codex CLI
 
-    U->>C: 发送普通消息 /status /abort
+    U->>C: 发送普通消息 /status /abort /new
     C->>W: websocket 长连接事件
     W-->>G: InboundEnvelope
 
     G->>G: 按 chat_id 路由 session
+    G->>P: 读取/更新 ConversationSessionBinding
     G->>P: 持久化 Session / Run / RunEvent
     G->>R: Enqueue queued run
 
     R-->>E: 投递排队任务
     E->>R: 获取工作区锁
-    E->>B: startRun(RunRequest)
-    B->>X: 拉起目标 CLI 进程
+    E->>B: startRun(RunRequest with sessionMode / bridgeSessionId)
+    B->>X: codex exec / codex exec resume
     X-->>B: delta / 摘要 / 完成 / 失败 / 取消
     B-->>E: 规范化 RunEvent
 
-    E->>P: 持久化运行与事件
+    E->>P: 持久化运行、事件与续聊绑定
     E->>R: 写入 heartbeat / cancel / lock 状态
     E->>R: 发布 executor runtime fingerprint
     G->>R: 发布 gateway runtime fingerprint
@@ -131,9 +132,15 @@ sequenceDiagram
 
 - `gateway` 与 `executor` 现在按双进程运行，统一从 `~/.carvis/config.json` 和环境变量读取运行时配置。
 - `packages/channel-feishu` 负责 websocket 握手、allowlist / mention 过滤和 `InboundEnvelope` 归一化；这些细节不泄漏到 queue / run-flow。
+- `gateway` 在普通消息入队前会读取当前 `ConversationSessionBinding`，决定本轮 `RunRequest` 以 `fresh` 还是 `continuation` 模式进入执行链路；`/new` 只重置当前 `chat` 的续聊绑定，不打断活动运行。
 - `packages/channel-feishu` 同时负责工作中 reaction、运行中 `interactive` 卡片、完成态摘要卡和异常兜底终态消息的发送。
 - `packages/bridge-codex` 同时保留脚本化测试 transport 和真实 `codex exec` CLI transport。
-- `packages/bridge-codex` 现在把 `codex exec --json` 的 JSONL 输出解析为有序 `agent.output.delta`，供 `gateway` 输出窗口合并与过程卡片打字机更新使用。
+- `packages/bridge-codex` 现在同时支持：
+  - `codex exec --json` 新会话执行
+  - `codex exec resume --json` 续聊执行
+  - 将 JSONL 输出解析为有序 `agent.output.delta`
+  - 在终态事件里回传 `bridge_session_id` / `session_outcome`
+  - 在续聊 session 无效时返回 `session_invalid`
 - `packages/core/src/runtime/runtime-factory.ts` 现在负责：
   - 真实 Postgres / Redis 客户端装配
   - migration 触发
@@ -149,6 +156,12 @@ sequenceDiagram
   - `degraded`
   - 以及 `streamingMessageId / streamingCardId / fallbackTerminalMessageId / lastOutputExcerpt`
 - 过程卡片创建或更新失败时，系统立即把该次呈现标记为 `degraded`，停止继续更新卡片；只有在卡片从未成功创建时，才会发送异常兜底终态消息。
+- `ConversationSessionBinding` 是 004 新增的持久化实体，用于记录：
+  - 每个飞书 `chat` 当前绑定的底层 Codex session
+  - 最近一次显式 `/new` 重置
+  - 最近一次续聊失效与自动恢复结果
+  - `/status` 所需的 `fresh / continued / recent_reset / recent_recovered / recent_recovery_failed` 状态
+- `executor` 在检测到 `session_invalid` 时，会在同一 run 内自动 fresh 重试一次；成功则把绑定状态写为 `recovered`，失败则保留 `recent_recovery_failed` 供 `/status` 和运维排障使用。
 
 ## 4. 说明
 

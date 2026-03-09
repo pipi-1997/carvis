@@ -12,6 +12,7 @@ import { buildRuntimeScope, createRuntimeServices, detectRuntimeFingerprintDrift
 
 import { createGatewayApp } from "./app.ts";
 import { handleAbortCommand } from "./commands/abort.ts";
+import { handleNewCommand } from "./commands/new.ts";
 import { handleStatusCommand } from "./commands/status.ts";
 import { createAllowlistGuard } from "./security/allowlist.ts";
 import { createPresentationOrchestrator } from "./services/presentation-orchestrator.ts";
@@ -180,10 +181,22 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         return;
       }
 
+      if (envelope.command === "new") {
+        const message = await handleNewCommand({
+          session,
+          agentConfig: services.config.agent,
+          repositories: services.repositories,
+        });
+        await notifier.sendMessage(message);
+        return;
+      }
+
       if (!envelope.prompt) {
         return;
       }
 
+      const binding = await services.repositories.conversationSessionBindings.getBindingBySessionId(session.id);
+      const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
       const activeRun = await services.repositories.runs.findActiveRunByWorkspace(services.config.agent.workspace);
       const run = await services.repositories.runs.createQueuedRun({
         sessionId: session.id,
@@ -193,6 +206,8 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         triggerMessageId: envelope.messageId,
         triggerUserId: envelope.userId,
         timeoutSeconds: services.config.agent.timeoutSeconds,
+        requestedSessionMode,
+        requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
       });
       const queuePosition = (await services.queue.enqueue(services.config.agent.workspace, run.id)) + (activeRun ? 1 : 0);
       await services.repositories.runs.updateQueuePosition(run.id, queuePosition);

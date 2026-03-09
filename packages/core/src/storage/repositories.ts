@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AgentConfig,
+  ConversationSessionBinding,
+  ConversationSessionBindingStatus,
+  ConversationSessionRecoveryResult,
   DeliveryKind,
   DeliveryStatus,
   OutboundDelivery,
@@ -10,6 +13,7 @@ import type {
   RunEvent,
   RunPresentation,
   RunStatus,
+  SessionMode,
   Session,
 } from "../domain/models.ts";
 
@@ -33,6 +37,29 @@ export interface SessionRepository {
   listSessions(): Promise<Session[]>;
 }
 
+export interface ConversationSessionBindingRepository {
+  getBindingBySessionId(sessionId: string): Promise<ConversationSessionBinding | null>;
+  listBindings(): Promise<ConversationSessionBinding[]>;
+  saveBindingContinuation(input: {
+    session: Session;
+    bridge: AgentConfig["bridge"];
+    bridgeSessionId: string;
+    status: Extract<ConversationSessionBindingStatus, "bound" | "recovered">;
+    recoveryResult?: ConversationSessionRecoveryResult | null;
+    now?: Date;
+  }): Promise<ConversationSessionBinding>;
+  markBindingReset(input: {
+    session: Session;
+    now?: Date;
+  }): Promise<ConversationSessionBinding>;
+  markBindingInvalidated(input: {
+    session: Session;
+    reason: string;
+    recoveryResult?: ConversationSessionRecoveryResult | null;
+    now?: Date;
+  }): Promise<ConversationSessionBinding>;
+}
+
 export interface RunRepository {
   createQueuedRun(input: {
     sessionId: string;
@@ -42,6 +69,8 @@ export interface RunRepository {
     triggerMessageId: string;
     triggerUserId: string;
     timeoutSeconds: number;
+    requestedSessionMode?: SessionMode;
+    requestedBridgeSessionId?: string | null;
     now?: Date;
   }): Promise<Run>;
   updateQueuePosition(runId: string, queuePosition: number): Promise<Run>;
@@ -51,8 +80,27 @@ export interface RunRepository {
   getLatestRunBySession(sessionId: string): Promise<Run | null>;
   getLatestRunByChat(channel: Session["channel"], chatId: string): Promise<Run | null>;
   markRunStarted(runId: string, startedAt: string): Promise<Run>;
-  markRunCompleted(runId: string, finishedAt: string, resultSummary: string): Promise<Run>;
-  markRunFailed(runId: string, finishedAt: string, failureCode: string, failureMessage: string): Promise<Run>;
+  markRunCompleted(
+    runId: string,
+    finishedAt: string,
+    resultSummary: string,
+    metadata?: {
+      resolvedBridgeSessionId?: string | null;
+      sessionRecoveryAttempted?: boolean;
+      sessionRecoveryResult?: ConversationSessionRecoveryResult | null;
+    },
+  ): Promise<Run>;
+  markRunFailed(
+    runId: string,
+    finishedAt: string,
+    failureCode: string,
+    failureMessage: string,
+    metadata?: {
+      resolvedBridgeSessionId?: string | null;
+      sessionRecoveryAttempted?: boolean;
+      sessionRecoveryResult?: ConversationSessionRecoveryResult | null;
+    },
+  ): Promise<Run>;
   markRunCancelled(runId: string, finishedAt: string, reason: string): Promise<Run>;
   markCancelRequested(runId: string, requestedAt: string): Promise<Run>;
 }
@@ -125,6 +173,7 @@ export interface PresentationRepository {
 
 export interface RepositoryBundle {
   sessions: SessionRepository;
+  conversationSessionBindings: ConversationSessionBindingRepository;
   runs: RunRepository;
   events: RunEventRepository;
   deliveries: DeliveryRepository;
@@ -138,6 +187,7 @@ export interface PostgresClient {
 export function createInMemoryRepositories(): RepositoryBundle {
   const sessions = new Map<string, Session>();
   const sessionsByChat = new Map<string, string>();
+  const conversationSessionBindings = new Map<string, ConversationSessionBinding>();
   const runs = new Map<string, Run>();
   const runIdsBySession = new Map<string, string[]>();
   const events = new Map<string, Array<RunEvent<Record<string, unknown>>>>();
@@ -184,6 +234,90 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
   };
 
+  const conversationSessionBindingRepository: ConversationSessionBindingRepository = {
+    async getBindingBySessionId(sessionId) {
+      return clone(conversationSessionBindings.get(sessionId) ?? null);
+    },
+    async listBindings() {
+      return Array.from(conversationSessionBindings.values()).map(clone);
+    },
+    async saveBindingContinuation({ session, bridge, bridgeSessionId, status, recoveryResult, now }) {
+      const timestamp = nowIso(now);
+      const existing = conversationSessionBindings.get(session.id);
+      const binding: ConversationSessionBinding = {
+        sessionId: session.id,
+        chatId: session.chatId,
+        agentId: session.agentId,
+        workspace: session.workspace,
+        bridge,
+        bridgeSessionId,
+        mode: "continuation",
+        status,
+        lastBoundAt: timestamp,
+        lastUsedAt: timestamp,
+        lastResetAt: existing?.lastResetAt ?? null,
+        lastInvalidatedAt: existing?.lastInvalidatedAt ?? null,
+        lastInvalidationReason: existing?.lastInvalidationReason ?? null,
+        lastRecoveryAt: status === "recovered" ? timestamp : existing?.lastRecoveryAt ?? null,
+        lastRecoveryResult: recoveryResult ?? existing?.lastRecoveryResult ?? null,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      conversationSessionBindings.set(session.id, binding);
+      return clone(binding);
+    },
+    async markBindingReset({ session, now }) {
+      const timestamp = nowIso(now);
+      const existing = conversationSessionBindings.get(session.id);
+      const binding: ConversationSessionBinding = {
+        sessionId: session.id,
+        chatId: session.chatId,
+        agentId: session.agentId,
+        workspace: session.workspace,
+        bridge: session.agentId ? "codex" : "codex",
+        bridgeSessionId: null,
+        mode: "fresh",
+        status: "reset",
+        lastBoundAt: existing?.lastBoundAt ?? null,
+        lastUsedAt: existing?.lastUsedAt ?? null,
+        lastResetAt: timestamp,
+        lastInvalidatedAt: existing?.lastInvalidatedAt ?? null,
+        lastInvalidationReason: existing?.lastInvalidationReason ?? null,
+        lastRecoveryAt: existing?.lastRecoveryAt ?? null,
+        lastRecoveryResult: existing?.lastRecoveryResult ?? null,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      conversationSessionBindings.set(session.id, binding);
+      return clone(binding);
+    },
+    async markBindingInvalidated({ session, reason, recoveryResult, now }) {
+      const timestamp = nowIso(now);
+      const existing = conversationSessionBindings.get(session.id);
+      const binding: ConversationSessionBinding = {
+        sessionId: session.id,
+        chatId: session.chatId,
+        agentId: session.agentId,
+        workspace: session.workspace,
+        bridge: existing?.bridge ?? "codex",
+        bridgeSessionId: null,
+        mode: "fresh",
+        status: "invalidated",
+        lastBoundAt: existing?.lastBoundAt ?? null,
+        lastUsedAt: existing?.lastUsedAt ?? null,
+        lastResetAt: existing?.lastResetAt ?? null,
+        lastInvalidatedAt: timestamp,
+        lastInvalidationReason: reason,
+        lastRecoveryAt: recoveryResult ? timestamp : existing?.lastRecoveryAt ?? null,
+        lastRecoveryResult: recoveryResult ?? existing?.lastRecoveryResult ?? null,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      conversationSessionBindings.set(session.id, binding);
+      return clone(binding);
+    },
+  };
+
   const runRepository: RunRepository = {
     async createQueuedRun(input) {
       const run: Run = {
@@ -196,6 +330,11 @@ export function createInMemoryRepositories(): RepositoryBundle {
         triggerMessageId: input.triggerMessageId,
         triggerUserId: input.triggerUserId,
         timeoutSeconds: input.timeoutSeconds,
+        requestedSessionMode: input.requestedSessionMode ?? "fresh",
+        requestedBridgeSessionId: input.requestedBridgeSessionId ?? null,
+        resolvedBridgeSessionId: null,
+        sessionRecoveryAttempted: false,
+        sessionRecoveryResult: null,
         queuePosition: 0,
         startedAt: null,
         finishedAt: null,
@@ -250,21 +389,27 @@ export function createInMemoryRepositories(): RepositoryBundle {
         queuePosition: null,
       }));
     },
-    async markRunCompleted(runId, finishedAt) {
+    async markRunCompleted(runId, finishedAt, _resultSummary, metadata) {
       return updateTerminalAwareRun(runId, (run) => ({
         ...run,
         status: "completed",
         finishedAt,
+        resolvedBridgeSessionId: metadata?.resolvedBridgeSessionId ?? run.resolvedBridgeSessionId,
+        sessionRecoveryAttempted: metadata?.sessionRecoveryAttempted ?? run.sessionRecoveryAttempted,
+        sessionRecoveryResult: metadata?.sessionRecoveryResult ?? run.sessionRecoveryResult,
         queuePosition: null,
       }));
     },
-    async markRunFailed(runId, finishedAt, failureCode, failureMessage) {
+    async markRunFailed(runId, finishedAt, failureCode, failureMessage, metadata) {
       return updateTerminalAwareRun(runId, (run) => ({
         ...run,
         status: "failed",
         finishedAt,
         failureCode,
         failureMessage,
+        resolvedBridgeSessionId: metadata?.resolvedBridgeSessionId ?? run.resolvedBridgeSessionId,
+        sessionRecoveryAttempted: metadata?.sessionRecoveryAttempted ?? run.sessionRecoveryAttempted,
+        sessionRecoveryResult: metadata?.sessionRecoveryResult ?? run.sessionRecoveryResult,
         queuePosition: null,
       }));
     },
@@ -472,6 +617,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
 
   return {
     sessions: sessionRepository,
+    conversationSessionBindings: conversationSessionBindingRepository,
     runs: runRepository,
     events: eventRepository,
     deliveries: deliveryRepository,
@@ -480,6 +626,10 @@ export function createInMemoryRepositories(): RepositoryBundle {
 }
 
 export function createPostgresRepositories(client: PostgresClient): RepositoryBundle {
+  const selectConversationSessionBindingSql =
+    'SELECT session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt" FROM conversation_session_bindings';
+  const selectRunSql =
+    'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
   const selectRunPresentationSql =
     'SELECT run_id AS "runId", session_id AS "sessionId", chat_id AS "chatId", phase, terminal_status AS "terminalStatus", streaming_message_id AS "streamingMessageId", streaming_card_id AS "streamingCardId", streaming_element_id AS "streamingElementId", COALESCE(fallback_terminal_message_id, final_post_message_id) AS "fallbackTerminalMessageId", degraded_reason AS "degradedReason", last_output_sequence AS "lastOutputSequence", last_output_excerpt AS "lastOutputExcerpt", created_at AS "createdAt", updated_at AS "updatedAt" FROM run_presentations';
   const selectOutboundDeliverySql =
@@ -536,6 +686,155 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     },
   };
 
+  const conversationSessionBindings: ConversationSessionBindingRepository = {
+    async getBindingBySessionId(sessionId) {
+      const result = await client.query<ConversationSessionBinding>(
+        `${selectConversationSessionBindingSql} WHERE session_id = $1 LIMIT 1`,
+        [sessionId],
+      );
+      return result.rows[0] ?? null;
+    },
+    async listBindings() {
+      const result = await client.query<ConversationSessionBinding>(`${selectConversationSessionBindingSql} ORDER BY created_at ASC`);
+      return result.rows;
+    },
+    async saveBindingContinuation({ session, bridge, bridgeSessionId, status, recoveryResult, now }) {
+      const timestamp = nowIso(now);
+      const result = await client.query<ConversationSessionBinding>(
+        `INSERT INTO conversation_session_bindings (
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
+          last_recovery_at, last_recovery_result, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13,
+          $14, $15, $16, $17
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+          chat_id = EXCLUDED.chat_id,
+          agent_id = EXCLUDED.agent_id,
+          workspace = EXCLUDED.workspace,
+          bridge = EXCLUDED.bridge,
+          bridge_session_id = EXCLUDED.bridge_session_id,
+          mode = EXCLUDED.mode,
+          status = EXCLUDED.status,
+          last_bound_at = EXCLUDED.last_bound_at,
+          last_used_at = EXCLUDED.last_used_at,
+          last_recovery_at = CASE WHEN EXCLUDED.status = 'recovered' THEN EXCLUDED.last_recovery_at ELSE conversation_session_bindings.last_recovery_at END,
+          last_recovery_result = COALESCE(EXCLUDED.last_recovery_result, conversation_session_bindings.last_recovery_result),
+          updated_at = EXCLUDED.updated_at
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          session.id,
+          session.chatId,
+          session.agentId,
+          session.workspace,
+          bridge,
+          bridgeSessionId,
+          "continuation",
+          status,
+          timestamp,
+          timestamp,
+          null,
+          null,
+          null,
+          status === "recovered" ? timestamp : null,
+          recoveryResult ?? null,
+          timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0];
+    },
+    async markBindingReset({ session, now }) {
+      const existing = await this.getBindingBySessionId(session.id);
+      const timestamp = nowIso(now);
+      const result = await client.query<ConversationSessionBinding>(
+        `INSERT INTO conversation_session_bindings (
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
+          last_recovery_at, last_recovery_result, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13,
+          $14, $15, $16, $17
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+          bridge_session_id = NULL,
+          mode = 'fresh',
+          status = 'reset',
+          last_reset_at = EXCLUDED.last_reset_at,
+          updated_at = EXCLUDED.updated_at
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          session.id,
+          session.chatId,
+          session.agentId,
+          session.workspace,
+          "codex",
+          null,
+          "fresh",
+          "reset",
+          existing?.lastBoundAt ?? null,
+          existing?.lastUsedAt ?? null,
+          timestamp,
+          existing?.lastInvalidatedAt ?? null,
+          existing?.lastInvalidationReason ?? null,
+          existing?.lastRecoveryAt ?? null,
+          existing?.lastRecoveryResult ?? null,
+          existing?.createdAt ?? timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0];
+    },
+    async markBindingInvalidated({ session, reason, recoveryResult, now }) {
+      const existing = await this.getBindingBySessionId(session.id);
+      const timestamp = nowIso(now);
+      const result = await client.query<ConversationSessionBinding>(
+        `INSERT INTO conversation_session_bindings (
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
+          last_recovery_at, last_recovery_result, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12, $13,
+          $14, $15, $16, $17
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+          bridge_session_id = NULL,
+          mode = 'fresh',
+          status = 'invalidated',
+          last_invalidated_at = EXCLUDED.last_invalidated_at,
+          last_invalidation_reason = EXCLUDED.last_invalidation_reason,
+          last_recovery_at = COALESCE(EXCLUDED.last_recovery_at, conversation_session_bindings.last_recovery_at),
+          last_recovery_result = COALESCE(EXCLUDED.last_recovery_result, conversation_session_bindings.last_recovery_result),
+          updated_at = EXCLUDED.updated_at
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          session.id,
+          session.chatId,
+          session.agentId,
+          session.workspace,
+          existing?.bridge ?? "codex",
+          null,
+          "fresh",
+          "invalidated",
+          existing?.lastBoundAt ?? null,
+          existing?.lastUsedAt ?? null,
+          existing?.lastResetAt ?? null,
+          timestamp,
+          reason,
+          recoveryResult ? timestamp : existing?.lastRecoveryAt ?? null,
+          recoveryResult ?? existing?.lastRecoveryResult ?? null,
+          existing?.createdAt ?? timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0];
+    },
+  };
+
   const runs: RunRepository = {
     async createQueuedRun(input) {
       const run: Run = {
@@ -548,6 +847,11 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         triggerMessageId: input.triggerMessageId,
         triggerUserId: input.triggerUserId,
         timeoutSeconds: input.timeoutSeconds,
+        requestedSessionMode: input.requestedSessionMode ?? "fresh",
+        requestedBridgeSessionId: input.requestedBridgeSessionId ?? null,
+        resolvedBridgeSessionId: null,
+        sessionRecoveryAttempted: false,
+        sessionRecoveryResult: null,
         queuePosition: 0,
         startedAt: null,
         finishedAt: null,
@@ -557,7 +861,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         createdAt: nowIso(input.now),
       };
       await client.query(
-        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, trigger_message_id, trigger_user_id, timeout_seconds, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, trigger_message_id, trigger_user_id, timeout_seconds, requested_session_mode, requested_bridge_session_id, resolved_bridge_session_id, session_recovery_attempted, session_recovery_result, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
         [
           run.id,
           run.sessionId,
@@ -568,6 +872,11 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           run.triggerMessageId,
           run.triggerUserId,
           run.timeoutSeconds,
+          run.requestedSessionMode,
+          run.requestedBridgeSessionId,
+          run.resolvedBridgeSessionId,
+          run.sessionRecoveryAttempted,
+          run.sessionRecoveryResult,
           run.queuePosition,
           run.createdAt,
         ],
@@ -584,27 +893,27 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     },
     async getRunById(runId) {
       const result = await client.query<Run>(
-        "SELECT id, session_id AS \"sessionId\", agent_id AS \"agentId\", workspace, status, prompt, trigger_message_id AS \"triggerMessageId\", trigger_user_id AS \"triggerUserId\", timeout_seconds AS \"timeoutSeconds\", queue_position AS \"queuePosition\", started_at AS \"startedAt\", finished_at AS \"finishedAt\", failure_code AS \"failureCode\", failure_message AS \"failureMessage\", cancel_requested_at AS \"cancelRequestedAt\", created_at AS \"createdAt\" FROM agent_runs WHERE id = $1 LIMIT 1",
+        `${selectRunSql} WHERE id = $1 LIMIT 1`,
         [runId],
       );
       return result.rows[0] ?? null;
     },
     async listRuns() {
       const result = await client.query<Run>(
-        "SELECT id, session_id AS \"sessionId\", agent_id AS \"agentId\", workspace, status, prompt, trigger_message_id AS \"triggerMessageId\", trigger_user_id AS \"triggerUserId\", timeout_seconds AS \"timeoutSeconds\", queue_position AS \"queuePosition\", started_at AS \"startedAt\", finished_at AS \"finishedAt\", failure_code AS \"failureCode\", failure_message AS \"failureMessage\", cancel_requested_at AS \"cancelRequestedAt\", created_at AS \"createdAt\" FROM agent_runs ORDER BY created_at ASC",
+        `${selectRunSql} ORDER BY created_at ASC`,
       );
       return result.rows;
     },
     async findActiveRunByWorkspace(workspace) {
       const result = await client.query<Run>(
-        "SELECT id, session_id AS \"sessionId\", agent_id AS \"agentId\", workspace, status, prompt, trigger_message_id AS \"triggerMessageId\", trigger_user_id AS \"triggerUserId\", timeout_seconds AS \"timeoutSeconds\", queue_position AS \"queuePosition\", started_at AS \"startedAt\", finished_at AS \"finishedAt\", failure_code AS \"failureCode\", failure_message AS \"failureMessage\", cancel_requested_at AS \"cancelRequestedAt\", created_at AS \"createdAt\" FROM agent_runs WHERE workspace = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1",
+        `${selectRunSql} WHERE workspace = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
         [workspace],
       );
       return result.rows[0] ?? null;
     },
     async getLatestRunBySession(sessionId) {
       const result = await client.query<Run>(
-        "SELECT id, session_id AS \"sessionId\", agent_id AS \"agentId\", workspace, status, prompt, trigger_message_id AS \"triggerMessageId\", trigger_user_id AS \"triggerUserId\", timeout_seconds AS \"timeoutSeconds\", queue_position AS \"queuePosition\", started_at AS \"startedAt\", finished_at AS \"finishedAt\", failure_code AS \"failureCode\", failure_message AS \"failureMessage\", cancel_requested_at AS \"cancelRequestedAt\", created_at AS \"createdAt\" FROM agent_runs WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1",
+        `${selectRunSql} WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
         [sessionId],
       );
       return result.rows[0] ?? null;
@@ -624,21 +933,35 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       }
       return run;
     },
-    async markRunCompleted(runId, finishedAt) {
-      await client.query("UPDATE agent_runs SET status = 'completed', finished_at = $1, queue_position = NULL WHERE id = $2", [
-        finishedAt,
-        runId,
-      ]);
+    async markRunCompleted(runId, finishedAt, _resultSummary, metadata) {
+      await client.query(
+        "UPDATE agent_runs SET status = 'completed', finished_at = $1, resolved_bridge_session_id = COALESCE($2, resolved_bridge_session_id), session_recovery_attempted = $3, session_recovery_result = $4, queue_position = NULL WHERE id = $5",
+        [
+          finishedAt,
+          metadata?.resolvedBridgeSessionId ?? null,
+          metadata?.sessionRecoveryAttempted ?? false,
+          metadata?.sessionRecoveryResult ?? null,
+          runId,
+        ],
+      );
       const run = await this.getRunById(runId);
       if (!run) {
         throw new Error(`run not found: ${runId}`);
       }
       return run;
     },
-    async markRunFailed(runId, finishedAt, failureCode, failureMessage) {
+    async markRunFailed(runId, finishedAt, failureCode, failureMessage, metadata) {
       await client.query(
-        "UPDATE agent_runs SET status = 'failed', finished_at = $1, failure_code = $2, failure_message = $3, queue_position = NULL WHERE id = $4",
-        [finishedAt, failureCode, failureMessage, runId],
+        "UPDATE agent_runs SET status = 'failed', finished_at = $1, failure_code = $2, failure_message = $3, resolved_bridge_session_id = COALESCE($4, resolved_bridge_session_id), session_recovery_attempted = $5, session_recovery_result = $6, queue_position = NULL WHERE id = $7",
+        [
+          finishedAt,
+          failureCode,
+          failureMessage,
+          metadata?.resolvedBridgeSessionId ?? null,
+          metadata?.sessionRecoveryAttempted ?? false,
+          metadata?.sessionRecoveryResult ?? null,
+          runId,
+        ],
       );
       const run = await this.getRunById(runId);
       if (!run) {
@@ -842,6 +1165,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
 
   return {
     sessions,
+    conversationSessionBindings,
     runs,
     events,
     deliveries,

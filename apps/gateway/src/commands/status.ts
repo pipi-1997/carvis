@@ -12,6 +12,7 @@ export async function handleStatusCommand(input: {
 }): Promise<OutboundMessage> {
   const activeRun = await input.repositories.runs.findActiveRunByWorkspace(input.agentConfig.workspace);
   const latestRun = await input.repositories.runs.getLatestRunBySession(input.session.id);
+  const binding = await input.repositories.conversationSessionBindings.getBindingBySessionId(input.session.id);
   const isLatestRunQueued = latestRun?.status === "queued";
   const aheadCount =
     latestRun && isLatestRunQueued
@@ -24,6 +25,16 @@ export async function handleStatusCommand(input: {
     latestRun,
     isLatestRunQueued,
     aheadCount,
+    continuationState:
+      binding?.status === "recovered"
+        ? "recent_recovered"
+        : binding?.status === "reset"
+          ? "recent_reset"
+          : binding?.status === "invalidated" && binding.lastRecoveryResult === "failed"
+            ? "recent_recovery_failed"
+            : binding?.bridgeSessionId
+              ? "continued"
+              : "fresh",
   };
 
   return {

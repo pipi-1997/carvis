@@ -59,6 +59,52 @@ describe("feishu websocket contract", () => {
     });
   });
 
+  test("websocket ingress 将 /new 识别为命令而不是运行请求", async () => {
+    const result = normalizeFeishuWebsocketEvent(
+      {
+        schema: "2.0",
+        header: {
+          event_type: "im.message.receive_v1",
+        },
+        event: {
+          sender: {
+            sender_id: {
+              open_id: "user-001",
+            },
+          },
+          message: {
+            chat_id: "chat-001",
+            message_id: "msg-002",
+            message_type: "text",
+            content: JSON.stringify({
+              text: "@carvis /new",
+            }),
+            mentions: [
+              {
+                name: "carvis",
+              },
+            ],
+          },
+        },
+      },
+      {
+        allowFrom: ["chat-001"],
+        requireMention: true,
+      },
+    );
+
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) {
+      throw new Error("expected accepted event");
+    }
+
+    expect(result.envelope).toMatchObject({
+      command: "new",
+      prompt: null,
+      rawText: "/new",
+    });
+  });
+
   test("allowlist 与 mention 过滤在 channel-feishu 内部完成", async () => {
     const blocked = normalizeFeishuWebsocketEvent(
       {

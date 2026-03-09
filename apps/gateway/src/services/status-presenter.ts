@@ -15,6 +15,7 @@ export function formatStatusSnapshot(snapshot: StatusSnapshot): string {
   lines.push(`最近运行状态: ${snapshot.latestRun?.status ?? "none"}`);
   lines.push(`当前会话最近请求排队: ${snapshot.isLatestRunQueued ? "是" : "否"}`);
   lines.push(`前方队列长度: ${snapshot.aheadCount}`);
+  lines.push(`当前会话续聊: ${snapshot.continuationState}`);
 
   return lines.join("\n");
 }

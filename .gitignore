@@ -2,6 +2,8 @@ node_modules/
 .env
 .env.*
 dist/
+build/
 coverage/
+*.log
 .DS_Store
 bun.lock
