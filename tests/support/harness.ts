@@ -7,6 +7,11 @@ import { createAllowlistGuard } from "../../apps/gateway/src/security/allowlist.
 import { createPresentationOrchestrator } from "../../apps/gateway/src/services/presentation-orchestrator.ts";
 import { createRunNotifier } from "../../apps/gateway/src/services/run-notifier.ts";
 import { createRunReaper } from "../../apps/gateway/src/services/run-reaper.ts";
+import { createSchedulerLoop } from "../../apps/gateway/src/services/scheduler-loop.ts";
+import { createTriggerDefinitionSync } from "../../apps/gateway/src/services/trigger-definition-sync.ts";
+import { signExternalWebhookBody } from "../../apps/gateway/src/services/external-webhook-auth.ts";
+import { createTriggerDispatcher } from "../../apps/gateway/src/services/trigger-dispatcher.ts";
+import { createTriggerStatusPresenter } from "../../apps/gateway/src/services/trigger-status-presenter.ts";
 import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
@@ -44,7 +49,17 @@ export function createSignedHeaders(
   };
 }
 
-export function createFeishuPayload(text: string, overrides?: Partial<Record<string, string>>) {
+type FeishuPayloadOverrides = {
+  chat_id?: string;
+  chat_type?: string;
+  message_id?: string;
+  user_id?: string;
+  mentions?: Array<{
+    name?: string;
+  }>;
+};
+
+export function createFeishuPayload(text: string, overrides?: FeishuPayloadOverrides) {
   const chatId = overrides?.chat_id ?? "chat-001";
   const chatType = overrides?.chat_type ?? "p2p";
   const messageId = overrides?.message_id ?? "msg-001";
@@ -68,6 +83,7 @@ export function createFeishuPayload(text: string, overrides?: Partial<Record<str
         content: JSON.stringify({
           text,
         }),
+        mentions: overrides?.mentions ?? [],
       },
     },
   };
@@ -79,7 +95,11 @@ export function createHarness(options?: {
   transportScript?: Parameters<typeof createScriptedCodexTransport>[0];
   heartbeatTtlMs?: number;
   allowChatIds?: string[];
+  triggerConfig?: Partial<RuntimeConfig["triggers"]>;
   workspaceResolver?: Partial<RuntimeConfig["workspaceResolver"]>;
+  delivery?: {
+    failSendMessage?: boolean;
+  };
   presentation?: {
     failCardCreate?: boolean;
     failCardUpdate?: boolean;
@@ -113,6 +133,10 @@ export function createHarness(options?: {
     },
     managedWorkspaceRoot,
     templatePath: options?.workspaceResolver?.templatePath ?? `/tmp/carvis-template-${uniqueSuffix}`,
+  };
+  const triggerConfig: RuntimeConfig["triggers"] = {
+    scheduledJobs: options?.triggerConfig?.scheduledJobs ?? [],
+    webhooks: options?.triggerConfig?.webhooks ?? [],
   };
   for (const workspacePath of Object.values(workspaceResolverConfig.registry)) {
     mkdirSync(workspacePath, { recursive: true });
@@ -235,6 +259,9 @@ export function createHarness(options?: {
     signingSecret: "test-secret",
     sender: {
       sendMessage: async (message: OutboundMessage) => {
+        if (options?.delivery?.failSendMessage) {
+          throw new Error("send message failed");
+        }
         sentMessages.push(message);
         return {
           messageId: `delivery-${Math.random().toString(36).slice(2, 10)}`,
@@ -269,6 +296,29 @@ export function createHarness(options?: {
     presentationOrchestrator,
     repositories,
   });
+  const triggerDispatcher = createTriggerDispatcher({
+    agentConfig,
+    logger,
+    notifier,
+    queue,
+    repositories,
+    now,
+  });
+  const triggerDefinitionSync = createTriggerDefinitionSync({
+    config: triggerConfig,
+    repositories,
+    workspaceResolverConfig,
+    now,
+  });
+  const scheduler = createSchedulerLoop({
+    logger,
+    repositories,
+    triggerDispatcher,
+    now,
+  });
+  const triggerStatusPresenter = createTriggerStatusPresenter({
+    repositories,
+  });
   const transport =
     options?.transport ??
     createScriptedCodexTransport(
@@ -301,6 +351,7 @@ export function createHarness(options?: {
     }),
     notifier,
     now,
+    triggerConfig,
   });
   const executor = createExecutorWorker({
     agentConfig,
@@ -323,7 +374,7 @@ export function createHarness(options?: {
     now,
   });
 
-  async function postFeishuText(text: string, overrides?: Partial<Record<string, string>>) {
+  async function postFeishuText(text: string, overrides?: FeishuPayloadOverrides) {
     const payload = createFeishuPayload(text, overrides);
     const body = JSON.stringify(payload);
 
@@ -331,6 +382,43 @@ export function createHarness(options?: {
       method: "POST",
       headers: createSignedHeaders(body),
       body,
+    });
+  }
+
+
+  async function postExternalWebhook(
+    slug: string,
+    payload: Record<string, unknown>,
+    options?: {
+      secret?: string;
+      timestamp?: string;
+    },
+  ) {
+    await triggerDefinitionSync.syncDefinitions();
+    const body = JSON.stringify(payload);
+    const timestamp = options?.timestamp ?? String(Math.floor(now().getTime() / 1_000));
+    const secret = options?.secret ?? triggerConfig.webhooks.find((candidate) => candidate.slug === slug)?.secret ?? "test-secret";
+    const signature = signExternalWebhookBody({
+      body,
+      secret,
+      timestamp,
+    });
+
+    return gateway.request(`http://localhost/webhooks/external/${slug}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-carvis-webhook-signature": signature,
+        "x-carvis-webhook-timestamp": timestamp,
+      },
+      body,
+    });
+  }
+
+  async function getInternalTriggers(path = "/internal/triggers/definitions", query?: Record<string, string>) {
+    const search = query ? `?${new URLSearchParams(query).toString()}` : "";
+    return gateway.request(`http://localhost${path}${search}`, {
+      method: "GET",
     });
   }
 
@@ -373,10 +461,12 @@ export function createHarness(options?: {
     cancelSignals,
     executor,
     gateway,
+    getInternalTriggers,
     heartbeats,
     logger,
     notifier,
     postFeishuText,
+    postExternalWebhook,
     presentationOrchestrator,
     presentationOperations,
     presentationSender,
@@ -384,7 +474,13 @@ export function createHarness(options?: {
     reactionOperations,
     reaper,
     repositories,
+    scheduler,
     sentMessages,
+    syncTriggerDefinitions: async () => triggerDefinitionSync.syncDefinitions(),
+    triggerConfig,
+    triggerDefinitionSync,
+    triggerDispatcher,
+    triggerStatusPresenter,
     workspaceLocks,
     workspaceResolverConfig,
     listRunStatuses,

@@ -1,6 +1,6 @@
 import { StructuredLogger } from "./logger.ts";
 import type { RuntimeStatus } from "../domain/runtime-models.ts";
-import type { WorkspaceBindingSource } from "../domain/models.ts";
+import type { TriggerDefinitionSourceType, TriggerExecutionStatus, WorkspaceBindingSource } from "../domain/models.ts";
 
 type GatewayStateInput = {
   configFingerprint: string;
@@ -58,6 +58,29 @@ type CommandStateInput = {
   reason?: string;
 };
 
+type TriggerDefinitionSyncStateInput = {
+  definitionId: string;
+  sourceType: TriggerDefinitionSourceType;
+  enabled: boolean;
+  nextDueAt?: string | null;
+};
+
+type TriggerExecutionStateInput = {
+  definitionId: string;
+  executionId: string;
+  sourceType: TriggerDefinitionSourceType;
+  runId?: string | null;
+  triggeredAt: string;
+  reason?: string | null;
+  failureCode?: string | null;
+};
+
+type ExternalWebhookStateInput = {
+  slug: string;
+  definitionId?: string | null;
+  reason?: string | null;
+};
+
 export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
   return {
     commandState(status: "recognized" | "unknown" | "mention_normalized", input: CommandStateInput) {
@@ -71,6 +94,20 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         ...(input.command ? { command: input.command } : {}),
         ...(input.normalizedText ? { normalizedText: input.normalizedText } : {}),
         ...(input.rawText ? { rawText: input.rawText } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
+    externalWebhookState(
+      status: "accepted" | "auth_failed" | "payload_rejected" | "rejected" | "unknown_slug",
+      input: ExternalWebhookStateInput,
+    ) {
+      const level =
+        status === "accepted" ? "info" : status === "unknown_slug" || status === "rejected" ? "warn" : "warn";
+      baseLogger[level](`trigger.webhook.${status}`, {
+        role: "gateway",
+        status,
+        slug: input.slug,
+        ...(input.definitionId ? { definitionId: input.definitionId } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
       });
     },
@@ -151,6 +188,33 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
     },
     info(message: string, context?: Record<string, unknown>) {
       baseLogger.info(message, context);
+    },
+    triggerDefinitionSyncState(
+      status: "next_due_synced" | "runtime_sync_upserted" | "runtime_sync_disabled",
+      input: TriggerDefinitionSyncStateInput,
+    ) {
+      baseLogger.info(`trigger.definition.${status}`, {
+        role: "gateway",
+        status,
+        definitionId: input.definitionId,
+        sourceType: input.sourceType,
+        enabled: input.enabled,
+        nextDueAt: input.nextDueAt ?? null,
+      });
+    },
+    triggerExecutionState(status: TriggerExecutionStatus, input: TriggerExecutionStateInput) {
+      const level = status === "failed" || status === "missed" || status === "rejected" ? "warn" : "info";
+      baseLogger[level](`trigger.execution.${status}`, {
+        role: "gateway",
+        status,
+        definitionId: input.definitionId,
+        executionId: input.executionId,
+        sourceType: input.sourceType,
+        triggeredAt: input.triggeredAt,
+        ...(input.runId ? { runId: input.runId } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.failureCode ? { failureCode: input.failureCode } : {}),
+      });
     },
     listEntries() {
       return baseLogger.listEntries();

@@ -54,6 +54,9 @@ export function createPresentationOrchestrator(input: {
         if (!run) {
           throw new Error(`run not found: ${event.runId}`);
         }
+        if (!run.sessionId) {
+          return null;
+        }
         const session = await input.repositories.sessions.getSessionById(run.sessionId);
         if (!session) {
           throw new Error(`session not found: ${run.sessionId}`);

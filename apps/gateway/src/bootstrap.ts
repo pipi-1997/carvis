@@ -21,6 +21,11 @@ import { createPresentationOrchestrator } from "./services/presentation-orchestr
 import { createRunNotifier } from "./services/run-notifier.ts";
 import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
+import { createSchedulerLoop } from "./services/scheduler-loop.ts";
+import { resolveRequestedSession } from "./services/continuation-binding.ts";
+import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
+import { createTriggerDispatcher } from "./services/trigger-dispatcher.ts";
+import { createTriggerStatusPresenter } from "./services/trigger-status-presenter.ts";
 import { createWorkspaceProvisioner } from "./services/workspace-provisioner.ts";
 import { createWorkspaceResolver } from "./services/workspace-resolver.ts";
 
@@ -89,6 +94,51 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     presentationOrchestrator,
     repositories: services.repositories,
   });
+  const triggerDispatcher = createTriggerDispatcher({
+    agentConfig: services.config.agent,
+    logger: services.logger,
+    notifier,
+    queue: services.queue,
+    repositories: services.repositories,
+  });
+  const triggerDefinitionSync = createTriggerDefinitionSync({
+    config: services.config.triggers,
+    repositories: services.repositories,
+    workspaceResolverConfig: services.config.workspaceResolver,
+  });
+  const triggerStatusPresenter = createTriggerStatusPresenter({
+    repositories: services.repositories,
+  });
+  const scheduler = createSchedulerLoop({
+    logger: services.logger,
+    repositories: services.repositories,
+    triggerDispatcher,
+  });
+  const syncSummary = await triggerDefinitionSync.syncDefinitions();
+  for (const definitionId of syncSummary.createdOrUpdated) {
+    const definition = await services.repositories.triggerDefinitions.getDefinitionById(definitionId);
+    if (!definition) {
+      continue;
+    }
+    services.logger.triggerDefinitionSyncState("runtime_sync_upserted", {
+      definitionId,
+      sourceType: definition.sourceType,
+      enabled: definition.enabled,
+      nextDueAt: definition.nextDueAt,
+    });
+  }
+  for (const definitionId of syncSummary.disabled) {
+    const definition = await services.repositories.triggerDefinitions.getDefinitionById(definitionId);
+    if (!definition) {
+      continue;
+    }
+    services.logger.triggerDefinitionSyncState("runtime_sync_disabled", {
+      definitionId,
+      sourceType: definition.sourceType,
+      enabled: definition.enabled,
+      nextDueAt: definition.nextDueAt,
+    });
+  }
   const logGatewayState = () => {
     services.logger.gatewayState(health.status(), {
       configFingerprint: services.configFingerprint,
@@ -147,6 +197,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     notifier,
     health: runtimeHealth,
     healthPath: services.config.gateway.healthPath,
+    triggerConfig: services.config.triggers,
   });
   const ingressFactory = options.createFeishuIngress ?? createFeishuWebsocketIngress;
   const rawIngress = await ingressFactory({
@@ -294,7 +345,10 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         trigger: "prompt",
       });
 
-      const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
+      const { requestedSessionMode, requestedBridgeSessionId } = resolveRequestedSession({
+        binding,
+        workspace: resolvedWorkspace.workspacePath,
+      });
       const activeRun = await services.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
       const run = await services.repositories.runs.createQueuedRun({
         sessionId: session.id,
@@ -305,7 +359,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         triggerUserId: envelope.userId,
         timeoutSeconds: services.config.agent.timeoutSeconds,
         requestedSessionMode,
-        requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
+        requestedBridgeSessionId,
       });
       const queuePosition =
         (await services.queue.enqueue(resolvedWorkspace.workspacePath, run.id)) + (activeRun ? 1 : 0);
@@ -348,6 +402,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     ingress,
     notifier,
     reaper,
+    scheduler,
     services,
     async publishFingerprint() {
       await publishRuntimeFingerprint(services.redis, runtimeScope, "gateway", services.configFingerprint);

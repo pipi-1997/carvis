@@ -6,6 +6,8 @@ import type {
   RunPresentation,
   Session,
   SessionWorkspaceBinding,
+  TriggerDefinition,
+  TriggerExecution,
   WorkspaceCatalogEntry,
 } from "@carvis/core";
 
@@ -320,5 +322,188 @@ describe("postgres repositories", () => {
       "2026-03-09T00:00:00.000Z",
       "2026-03-09T00:00:00.000Z",
     ]);
+  });
+
+  test("createQueuedRun 支持 sessionless trigger run 与 delivery target", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        if (sql.includes("SELECT id, session_id")) {
+          return {
+            rows: [
+              {
+                id: "run-trigger-1",
+                sessionId: null,
+                agentId: "codex-main",
+                workspace: "/Users/pipi/workspace/carvis",
+                status: "queued",
+                prompt: "生成今日巡检摘要",
+                triggerSource: "scheduled_job",
+                triggerExecutionId: "execution-1",
+                triggerMessageId: null,
+                triggerUserId: null,
+                timeoutSeconds: 60,
+                requestedSessionMode: "fresh",
+                requestedBridgeSessionId: null,
+                resolvedBridgeSessionId: null,
+                sessionRecoveryAttempted: false,
+                sessionRecoveryResult: null,
+                deliveryTarget: {
+                  kind: "feishu_chat",
+                  chatId: "oc_ops_group",
+                },
+                queuePosition: 0,
+                startedAt: null,
+                finishedAt: null,
+                failureCode: null,
+                failureMessage: null,
+                cancelRequestedAt: null,
+                createdAt: "2026-03-10T00:00:00.000Z",
+              },
+            ] as T[],
+          };
+        }
+
+        return { rows: [] as T[] };
+      },
+    });
+
+    const run = await repositories.runs.createQueuedRun({
+      sessionId: null,
+      agentId: "codex-main",
+      workspace: "/Users/pipi/workspace/carvis",
+      prompt: "生成今日巡检摘要",
+      triggerSource: "scheduled_job",
+      triggerExecutionId: "execution-1",
+      triggerMessageId: null,
+      triggerUserId: null,
+      timeoutSeconds: 60,
+      requestedSessionMode: "fresh",
+      requestedBridgeSessionId: null,
+      deliveryTarget: {
+        kind: "feishu_chat",
+        chatId: "oc_ops_group",
+      },
+      now: new Date("2026-03-10T00:00:00.000Z"),
+    });
+
+    expect(run.sessionId).toBeNull();
+    expect(run.triggerSource).toBe("scheduled_job");
+    expect(run.triggerExecutionId).toBe("execution-1");
+    expect(run.deliveryTarget).toEqual({
+      kind: "feishu_chat",
+      chatId: "oc_ops_group",
+    });
+    expect(queries[0]?.sql).toContain("INSERT INTO agent_runs");
+  });
+
+  test("trigger repositories 映射 trigger definition 与 execution 字段", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        if (sql.includes("FROM trigger_definitions")) {
+          return {
+            rows: [
+              {
+                id: "build-failed",
+                sourceType: "external_webhook",
+                slug: "build-failed",
+                enabled: true,
+                workspace: "/Users/pipi/workspace/carvis",
+                agentId: "codex-main",
+                promptTemplate: "分析 {{summary}}",
+                deliveryTarget: {
+                  kind: "none",
+                },
+                scheduleExpr: null,
+                timezone: null,
+                nextDueAt: null,
+                lastTriggeredAt: "2026-03-10T00:00:00.000Z",
+                lastTriggerStatus: "accepted",
+                secretRef: "CARVIS_WEBHOOK_BUILD_FAILED_SECRET",
+                requiredFields: ["summary"],
+                optionalFields: [],
+                replayWindowSeconds: 300,
+                definitionHash: null,
+                createdAt: "2026-03-10T00:00:00.000Z",
+                updatedAt: "2026-03-10T00:00:00.000Z",
+              },
+            ] as T[],
+          };
+        }
+
+        if (sql.includes("FROM trigger_executions")) {
+          return {
+            rows: [
+              {
+                id: "execution-1",
+                definitionId: "build-failed",
+                sourceType: "external_webhook",
+                status: "rejected",
+                triggeredAt: "2026-03-10T00:00:00.000Z",
+                inputDigest: "sha256:abc",
+                runId: null,
+                deliveryStatus: null,
+                rejectionReason: "invalid_signature",
+                failureCode: null,
+                failureMessage: null,
+                finishedAt: "2026-03-10T00:00:00.000Z",
+                createdAt: "2026-03-10T00:00:00.000Z",
+                updatedAt: "2026-03-10T00:00:00.000Z",
+              },
+            ] as T[],
+          };
+        }
+
+        return { rows: [] as T[] };
+      },
+    });
+
+    const definition = await repositories.triggerDefinitions.getDefinitionById("build-failed");
+    const execution = await repositories.triggerExecutions.getExecutionById("execution-1");
+
+    expect(definition).toEqual({
+      id: "build-failed",
+      sourceType: "external_webhook",
+      slug: "build-failed",
+      enabled: true,
+      workspace: "/Users/pipi/workspace/carvis",
+      agentId: "codex-main",
+      promptTemplate: "分析 {{summary}}",
+      deliveryTarget: {
+        kind: "none",
+      },
+      scheduleExpr: null,
+      timezone: null,
+      nextDueAt: null,
+      lastTriggeredAt: "2026-03-10T00:00:00.000Z",
+      lastTriggerStatus: "accepted",
+      secretRef: "CARVIS_WEBHOOK_BUILD_FAILED_SECRET",
+      requiredFields: ["summary"],
+      optionalFields: [],
+      replayWindowSeconds: 300,
+      definitionHash: null,
+      createdAt: "2026-03-10T00:00:00.000Z",
+      updatedAt: "2026-03-10T00:00:00.000Z",
+    } satisfies TriggerDefinition);
+    expect(execution).toEqual({
+      id: "execution-1",
+      definitionId: "build-failed",
+      sourceType: "external_webhook",
+      status: "rejected",
+      triggeredAt: "2026-03-10T00:00:00.000Z",
+      inputDigest: "sha256:abc",
+      runId: null,
+      deliveryStatus: null,
+      rejectionReason: "invalid_signature",
+      failureCode: null,
+      failureMessage: null,
+      finishedAt: "2026-03-10T00:00:00.000Z",
+      createdAt: "2026-03-10T00:00:00.000Z",
+      updatedAt: "2026-03-10T00:00:00.000Z",
+    } satisfies TriggerExecution);
+    expect(queries[0]?.sql).toContain('source_type AS "sourceType"');
   });
 });

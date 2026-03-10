@@ -19,6 +19,7 @@ describe("feishu command normalization contract", () => {
       createFeishuPayload("@carvis /bind life-okr", {
         chat_id: "chat-001",
         chat_type: "group",
+        mentions: [{ name: "carvis" }],
       }),
     );
 
@@ -178,6 +179,32 @@ describe("feishu command normalization contract", () => {
       command: null,
       prompt: "@alice 请看 README",
       rawText: "@alice 请看 README",
+      unknownCommand: null,
+    });
+  });
+
+  test("webhook inbound 不会把任意 @user /command 识别为 bot 命令", async () => {
+    const adapter = new FeishuAdapter({
+      signingSecret: "test-secret",
+      sender: {
+        addReaction: async () => {},
+        removeReaction: async () => {},
+        sendMessage: async () => ({ messageId: "delivery-5" }),
+      },
+    });
+
+    const envelope = await adapter.parseInbound(
+      createFeishuPayload("@alice /bind ops", {
+        chat_id: "chat-001",
+        chat_type: "group",
+      }),
+    );
+
+    expect(envelope).toMatchObject({
+      command: null,
+      commandArgs: [],
+      prompt: "@alice /bind ops",
+      rawText: "@alice /bind ops",
       unknownCommand: null,
     });
   });

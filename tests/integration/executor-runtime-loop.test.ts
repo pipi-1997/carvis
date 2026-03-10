@@ -206,6 +206,10 @@ function createRuntimeConfig(env: Record<string, string>): RuntimeConfig {
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-workspace-template",
     },
+    triggers: {
+      scheduledJobs: [],
+      webhooks: [],
+    },
     secrets: {
       feishuAppId: env.FEISHU_APP_ID,
       feishuAppSecret: env.FEISHU_APP_SECRET,

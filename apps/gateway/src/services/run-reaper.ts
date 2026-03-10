@@ -6,7 +6,7 @@ export function createRunReaper(input: {
   queue: QueueDriver;
   workspaceLocks: WorkspaceLockDriver;
   notifier: {
-    notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
+    notifyRunEvent(session: { chatId: string } | null, event: RunEvent): Promise<void>;
   };
   cancelSignals?: CancelSignalDriver;
   now?: () => Date;
@@ -36,10 +36,23 @@ export function createRunReaper(input: {
           },
           now: now(),
         });
-        const session = await input.repositories.sessions.getSessionById(run.sessionId);
-        if (session) {
-          await input.notifier.notifyRunEvent(session, event);
+        if (run.triggerExecutionId) {
+          const execution = await input.repositories.triggerExecutions.updateExecution({
+            executionId: run.triggerExecutionId,
+            status: "failed",
+            failureCode: "heartbeat_expired",
+            failureMessage: "executor heartbeat expired",
+            finishedAt: failedAt,
+            now: now(),
+          });
+          await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+            definitionId: execution.definitionId,
+            lastTriggerStatus: "failed",
+            now: now(),
+          });
         }
+        const session = run.sessionId ? await input.repositories.sessions.getSessionById(run.sessionId) : null;
+        await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, event);
         await input.cancelSignals?.requestCancellation(runId);
         await input.heartbeats.clear(runId);
         await input.workspaceLocks.release(run.workspace, runId);

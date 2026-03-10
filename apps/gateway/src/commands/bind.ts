@@ -14,6 +14,19 @@ export async function handleBindCommand(input: {
   now?: () => Date;
 }): Promise<OutboundMessage> {
   const now = input.now ?? (() => new Date());
+  const resetContinuationBinding = async () => {
+    const continuationBinding = await input.repositories.conversationSessionBindings.getBindingBySessionId(
+      input.session.id,
+    );
+    if (!continuationBinding?.bridgeSessionId) {
+      return;
+    }
+
+    await input.repositories.conversationSessionBindings.markBindingReset({
+      session: input.session,
+      now: now(),
+    });
+  };
 
   if (!input.workspaceKey) {
     return {
@@ -93,6 +106,7 @@ export async function handleBindCommand(input: {
       bindingSource: "manual",
       now: now(),
     });
+    await resetContinuationBinding();
     input.logger?.workspaceBindState("bound", {
       agentId: input.agentConfig.id,
       chatId: input.session.chatId,
@@ -116,6 +130,7 @@ export async function handleBindCommand(input: {
       bindingSource: "created",
       now: now(),
     });
+    await resetContinuationBinding();
     input.logger?.workspaceBindState("created", {
       agentId: input.agentConfig.id,
       chatId: input.session.chatId,

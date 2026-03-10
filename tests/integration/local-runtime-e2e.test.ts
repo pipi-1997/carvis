@@ -106,6 +106,10 @@ function createSharedRuntimeFixture() {
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-workspace-template",
     },
+    triggers: {
+      scheduledJobs: [],
+      webhooks: [],
+    },
     secrets: {
       feishuAppId: "cli_test_app",
       feishuAppSecret: "test_app_secret",

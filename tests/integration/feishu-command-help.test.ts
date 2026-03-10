@@ -11,6 +11,7 @@ describe("feishu command help", () => {
       chat_type: "group",
       message_id: "msg-001",
       user_id: "user-001",
+      mentions: [{ name: "carvis" }],
     });
 
     expect(response.status).toBe(200);

@@ -116,8 +116,10 @@ describe("gateway startup", () => {
     const harness = await createRuntimeHarness();
     cleanupCallbacks.push(harness.cleanup);
 
-    let scheduled: (() => Promise<void>) | undefined;
-    let scheduledMs = 0;
+    const scheduledTimers: Array<{
+      callback: () => Promise<void>;
+      ms: number;
+    }> = [];
     let reaped = 0;
 
     const started = await startGateway({
@@ -140,20 +142,19 @@ describe("gateway startup", () => {
         stop() {},
       }),
       setIntervalFn: (callback, ms) => {
-        scheduled = async () => {
-          await callback();
-        };
-        scheduledMs = Number(ms);
+        scheduledTimers.push({
+          callback: async () => {
+            await callback();
+          },
+          ms: Number(ms),
+        });
         return 1 as unknown as Timer;
       },
     });
     cleanupCallbacks.push(started.stop);
 
-    expect(scheduledMs).toBe(1000);
-    if (!scheduled) {
-      throw new Error("expected gateway reaper to be scheduled");
-    }
-    await scheduled();
+    expect(scheduledTimers.map((timer) => timer.ms)).toEqual([1000, 1000]);
+    await scheduledTimers[0]?.callback();
     expect(reaped).toBe(1);
   });
 
@@ -232,6 +233,10 @@ function createGatewayRuntimeServicesFixture(input: {
         requireMention: false,
       },
       workspaceResolver: harness.workspaceResolverConfig,
+      triggers: {
+        scheduledJobs: [],
+        webhooks: [],
+      },
       secrets: {
         feishuAppId: "cli_test_app",
         feishuAppSecret: "test_app_secret",

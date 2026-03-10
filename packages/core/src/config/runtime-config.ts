@@ -1,17 +1,20 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
 import type { AgentConfig } from "../domain/models.ts";
 import type {
+  ExternalWebhookRuntimeDefinition,
   RuntimeConfig,
   RuntimeDependencyTargets,
   RuntimeFingerprintInput,
   RuntimeSecrets,
+  ScheduledJobRuntimeDefinition,
+  TriggerConfig,
 } from "../domain/runtime-models.ts";
 
 export const DEFAULT_RUNTIME_CONFIG_PATH = ".carvis/config.json";
@@ -44,6 +47,42 @@ const runtimeFileSchema = z.object({
     managedWorkspaceRoot: z.string().min(1, "workspaceResolver.managedWorkspaceRoot is required"),
     templatePath: z.string().min(1, "workspaceResolver.templatePath is required"),
   }),
+  triggers: z.object({
+    scheduledJobs: z.array(z.object({
+      id: z.string().min(1, "triggers.scheduledJobs.id is required"),
+      enabled: z.boolean(),
+      workspace: z.string().min(1, "triggers.scheduledJobs.workspace is required"),
+      agentId: z.string().min(1).optional(),
+      schedule: z.string().min(1, "triggers.scheduledJobs.schedule is required"),
+      timezone: z.string().min(1).nullable().optional(),
+      promptTemplate: z.string().min(1, "triggers.scheduledJobs.promptTemplate is required"),
+      delivery: z.object({
+        kind: z.enum(["none", "feishu_chat"]),
+        chatId: z.string().min(1).nullable().optional(),
+        label: z.string().min(1).nullable().optional(),
+      }),
+    })).default([]),
+    webhooks: z.array(z.object({
+      id: z.string().min(1, "triggers.webhooks.id is required"),
+      enabled: z.boolean(),
+      slug: z.string().min(1, "triggers.webhooks.slug is required"),
+      workspace: z.string().min(1, "triggers.webhooks.workspace is required"),
+      agentId: z.string().min(1).optional(),
+      promptTemplate: z.string().min(1, "triggers.webhooks.promptTemplate is required"),
+      requiredFields: z.array(z.string().min(1)).default([]),
+      optionalFields: z.array(z.string().min(1)).default([]),
+      secretEnv: z.string().min(1, "triggers.webhooks.secretEnv is required"),
+      replayWindowSeconds: z.number().int().positive().default(300),
+      delivery: z.object({
+        kind: z.enum(["none", "feishu_chat"]),
+        chatId: z.string().min(1).nullable().optional(),
+        label: z.string().min(1).nullable().optional(),
+      }),
+    })).default([]),
+  }).default({
+    scheduledJobs: [],
+    webhooks: [],
+  }),
 });
 
 type RuntimeFileConfig = z.infer<typeof runtimeFileSchema>;
@@ -67,6 +106,7 @@ export async function loadRuntimeConfig(
   const parsedConfig = runtimeFileSchema.parse(JSON.parse(rawConfig)) satisfies RuntimeFileConfig;
   const secrets = loadRuntimeSecrets(env);
   validateWorkspaceResolver(parsedConfig);
+  validateTriggerDefinitions(parsedConfig, env);
   const resolvedDefaultWorkspace = parsedConfig.workspaceResolver.registry[parsedConfig.agent.defaultWorkspace];
 
   return {
@@ -78,6 +118,7 @@ export async function loadRuntimeConfig(
     executor: parsedConfig.executor,
     feishu: parsedConfig.feishu,
     workspaceResolver: parsedConfig.workspaceResolver,
+    triggers: resolveTriggerConfig(parsedConfig, env),
     secrets,
   };
 }
@@ -116,6 +157,7 @@ export function buildRuntimeFingerprint(config: RuntimeConfig): string {
     feishuAppId: config.secrets.feishuAppId,
     postgresTarget: dependencyTargets.postgresTarget,
     redisTarget: dependencyTargets.redisTarget,
+    triggerDefinitionEntries: serializeTriggerDefinitions(config.triggers),
   };
 
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -146,6 +188,12 @@ function validateWorkspaceResolver(config: RuntimeFileConfig) {
     throw new Error("agent.defaultWorkspace must exist in workspaceResolver.registry");
   }
 
+  if (!isPathWithinRoot(defaultWorkspacePath, config.workspaceResolver.managedWorkspaceRoot)) {
+    throw new Error(
+      `workspaceResolver.registry.${defaultWorkspace} must stay within workspaceResolver.managedWorkspaceRoot`,
+    );
+  }
+
   for (const [workspaceKey, workspacePath] of Object.entries(registry)) {
     if (!existsSync(workspacePath)) {
       throw new Error(`workspaceResolver.registry.${workspaceKey} must point to an existing directory`);
@@ -162,7 +210,132 @@ function validateWorkspaceResolver(config: RuntimeFileConfig) {
   }
 }
 
-function requireEnv(env: Record<string, string | undefined>, key: keyof RuntimeSecretsMap): string {
+function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
+  const resolvedRoot = resolve(rootPath);
+  const resolvedTarget = resolve(targetPath);
+  const relativePath = relative(resolvedRoot, resolvedTarget);
+
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
+function validateTriggerDefinitions(
+  config: RuntimeFileConfig,
+  env: Record<string, string | undefined>,
+) {
+  const registry = config.workspaceResolver.registry;
+  const seenIds = new Set<string>();
+  const seenSlugs = new Set<string>();
+
+  for (const definition of config.triggers.scheduledJobs) {
+    if (seenIds.has(definition.id)) {
+      throw new Error(`duplicate trigger definition id: ${definition.id}`);
+    }
+    seenIds.add(definition.id);
+
+    if (!registry[definition.workspace]) {
+      throw new Error(`trigger workspace must exist in workspaceResolver.registry: ${definition.workspace}`);
+    }
+
+    if (definition.delivery.kind === "feishu_chat" && !definition.delivery.chatId) {
+      throw new Error(`trigger delivery chatId is required for feishu_chat: ${definition.id}`);
+    }
+  }
+
+  for (const definition of config.triggers.webhooks) {
+    if (seenIds.has(definition.id)) {
+      throw new Error(`duplicate trigger definition id: ${definition.id}`);
+    }
+    seenIds.add(definition.id);
+
+    if (seenSlugs.has(definition.slug)) {
+      throw new Error(`duplicate external webhook slug: ${definition.slug}`);
+    }
+    seenSlugs.add(definition.slug);
+
+    if (!registry[definition.workspace]) {
+      throw new Error(`trigger workspace must exist in workspaceResolver.registry: ${definition.workspace}`);
+    }
+
+    if (definition.delivery.kind === "feishu_chat" && !definition.delivery.chatId) {
+      throw new Error(`trigger delivery chatId is required for feishu_chat: ${definition.id}`);
+    }
+
+    requireEnv(env, definition.secretEnv);
+  }
+}
+
+function resolveTriggerConfig(
+  config: RuntimeFileConfig,
+  env: Record<string, string | undefined>,
+): TriggerConfig {
+  return {
+    scheduledJobs: config.triggers.scheduledJobs.map((definition) => ({
+      id: definition.id,
+      enabled: definition.enabled,
+      workspace: definition.workspace,
+      agentId: definition.agentId ?? config.agent.id,
+      schedule: definition.schedule,
+      timezone: definition.timezone ?? null,
+      promptTemplate: definition.promptTemplate,
+      delivery: {
+        kind: definition.delivery.kind,
+        chatId: definition.delivery.chatId ?? null,
+        label: definition.delivery.label ?? null,
+      },
+    } satisfies ScheduledJobRuntimeDefinition)),
+    webhooks: config.triggers.webhooks.map((definition) => ({
+      id: definition.id,
+      enabled: definition.enabled,
+      slug: definition.slug,
+      workspace: definition.workspace,
+      agentId: definition.agentId ?? config.agent.id,
+      promptTemplate: definition.promptTemplate,
+      requiredFields: definition.requiredFields,
+      optionalFields: definition.optionalFields,
+      secretEnv: definition.secretEnv,
+      secret: requireEnv(env, definition.secretEnv),
+      replayWindowSeconds: definition.replayWindowSeconds,
+      delivery: {
+        kind: definition.delivery.kind,
+        chatId: definition.delivery.chatId ?? null,
+        label: definition.delivery.label ?? null,
+      },
+    } satisfies ExternalWebhookRuntimeDefinition)),
+  };
+}
+
+function serializeTriggerDefinitions(triggers: TriggerConfig): string[] {
+  const scheduledJobs = triggers.scheduledJobs.map((definition) => JSON.stringify({
+    id: definition.id,
+    sourceType: "scheduled_job",
+    enabled: definition.enabled,
+    workspace: definition.workspace,
+    agentId: definition.agentId,
+    schedule: definition.schedule,
+    timezone: definition.timezone,
+    promptTemplate: definition.promptTemplate,
+    delivery: definition.delivery,
+  }));
+  const webhooks = triggers.webhooks.map((definition) => JSON.stringify({
+    id: definition.id,
+    sourceType: "external_webhook",
+    enabled: definition.enabled,
+    slug: definition.slug,
+    workspace: definition.workspace,
+    agentId: definition.agentId,
+    promptTemplate: definition.promptTemplate,
+    requiredFields: definition.requiredFields,
+    optionalFields: definition.optionalFields,
+    secretEnv: definition.secretEnv,
+    secret: definition.secret,
+    replayWindowSeconds: definition.replayWindowSeconds,
+    delivery: definition.delivery,
+  }));
+
+  return [...scheduledJobs, ...webhooks].sort();
+}
+
+function requireEnv(env: Record<string, string | undefined>, key: string): string {
   const value = env[key];
   if (!value) {
     throw new Error(`${key} is required`);
@@ -178,10 +351,3 @@ function sanitizeConnectionTarget(connectionString: string): string {
     return connectionString;
   }
 }
-
-type RuntimeSecretsMap = {
-  FEISHU_APP_ID: string;
-  FEISHU_APP_SECRET: string;
-  POSTGRES_URL: string;
-  REDIS_URL: string;
-};

@@ -22,6 +22,9 @@ interface FeishuWebhookPayload {
       chat_id: string;
       chat_type?: string;
       content: string;
+      mentions?: Array<{
+        name?: string;
+      }>;
     };
   };
 }
@@ -67,9 +70,10 @@ export class FeishuAdapter {
   async parseInbound(payload: FeishuWebhookPayload): Promise<InboundEnvelope> {
     const content = JSON.parse(payload.event.message.content) as { text?: string };
     const chatType = normalizeChatType(payload.event.message.chat_type);
+    const mentions = payload.event.message.mentions ?? [];
     const normalizedCommandText = normalizeFeishuCommandText({
       text: content.text ?? "",
-      allowCommandMentionFallback: chatType === "group",
+      mentions,
     });
 
     return {

@@ -27,10 +27,47 @@ type RuntimeConfigFixture = {
     managedWorkspaceRoot: string;
     templatePath: string;
   };
+  triggers: {
+    scheduledJobs: Array<{
+      id: string;
+      enabled: boolean;
+      workspace: string;
+      agentId?: string;
+      schedule: string;
+      timezone?: string | null;
+      promptTemplate: string;
+      delivery: {
+        kind: "none" | "feishu_chat";
+        chatId?: string | null;
+        label?: string | null;
+      };
+    }>;
+    webhooks: Array<{
+      id: string;
+      enabled: boolean;
+      slug: string;
+      workspace: string;
+      agentId?: string;
+      promptTemplate: string;
+      requiredFields: string[];
+      optionalFields?: string[];
+      secretEnv: string;
+      replayWindowSeconds?: number;
+      delivery: {
+        kind: "none" | "feishu_chat";
+        chatId?: string | null;
+        label?: string | null;
+      };
+    }>;
+  };
 };
 
 type DeepPartial<T> = {
-  [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K];
+  [K in keyof T]?: T[K] extends Array<infer U>
+    ? Array<DeepPartial<U>>
+    : T[K] extends Record<string, unknown>
+      ? DeepPartial<T[K]>
+      : T[K];
 };
 
 function mergeStringRecord(
@@ -112,6 +149,14 @@ function mergeRuntimeConfig(
         overrideConfig.workspaceResolver?.chatBindings,
       ),
     },
+    triggers: {
+      scheduledJobs: overrideConfig.triggers?.scheduledJobs
+        ? (overrideConfig.triggers.scheduledJobs as RuntimeConfigFixture["triggers"]["scheduledJobs"])
+        : baseConfig.triggers.scheduledJobs,
+      webhooks: overrideConfig.triggers?.webhooks
+        ? (overrideConfig.triggers.webhooks as RuntimeConfigFixture["triggers"]["webhooks"])
+        : baseConfig.triggers.webhooks,
+    },
   };
 }
 
@@ -146,6 +191,10 @@ function createDefaultRuntimeConfig(paths: {
       chatBindings: {},
       managedWorkspaceRoot: paths.managedWorkspaceRoot,
       templatePath: paths.templateDir,
+    },
+    triggers: {
+      scheduledJobs: [],
+      webhooks: [],
     },
   };
 }

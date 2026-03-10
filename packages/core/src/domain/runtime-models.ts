@@ -1,4 +1,4 @@
-import type { AgentConfig } from "./models.ts";
+import type { AgentConfig, TriggerDeliveryTarget } from "./models.ts";
 
 export interface RuntimeSecrets {
   feishuAppId: string;
@@ -28,12 +28,44 @@ export interface WorkspaceResolverConfig {
   templatePath: string;
 }
 
+export interface ScheduledJobRuntimeDefinition {
+  id: string;
+  enabled: boolean;
+  workspace: string;
+  agentId: string;
+  schedule: string;
+  timezone: string | null;
+  promptTemplate: string;
+  delivery: TriggerDeliveryTarget;
+}
+
+export interface ExternalWebhookRuntimeDefinition {
+  id: string;
+  enabled: boolean;
+  slug: string;
+  workspace: string;
+  agentId: string;
+  promptTemplate: string;
+  requiredFields: string[];
+  optionalFields: string[];
+  secretEnv: string;
+  secret: string;
+  replayWindowSeconds: number;
+  delivery: TriggerDeliveryTarget;
+}
+
+export interface TriggerConfig {
+  scheduledJobs: ScheduledJobRuntimeDefinition[];
+  webhooks: ExternalWebhookRuntimeDefinition[];
+}
+
 export interface RuntimeConfig {
   agent: AgentConfig;
   gateway: GatewayConfig;
   executor: ExecutorConfig;
   feishu: FeishuConnectionConfig;
   workspaceResolver: WorkspaceResolverConfig;
+  triggers: TriggerConfig;
   secrets: RuntimeSecrets;
 }
 
@@ -93,6 +125,7 @@ export interface RuntimeFingerprintInput {
   feishuAppId: string;
   postgresTarget: string;
   redisTarget: string;
+  triggerDefinitionEntries: string[];
 }
 
 export type RuntimeStatus = "starting" | "ready" | "degraded" | "failed";

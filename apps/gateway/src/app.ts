@@ -1,6 +1,13 @@
+import type { RuntimeConfig } from "@carvis/core";
+
 import { Hono } from "hono";
 
+import { registerExternalWebhookRoute } from "./routes/external-webhook.ts";
 import { createFeishuWebhookHandler } from "./routes/feishu-webhook.ts";
+import { registerInternalTriggersRoutes } from "./routes/internal-triggers.ts";
+import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
+import { createTriggerDispatcher } from "./services/trigger-dispatcher.ts";
+import { createTriggerStatusPresenter } from "./services/trigger-status-presenter.ts";
 
 type GatewayAppInput = Parameters<typeof createFeishuWebhookHandler>[0] & {
   health?: {
@@ -11,11 +18,35 @@ type GatewayAppInput = Parameters<typeof createFeishuWebhookHandler>[0] & {
     };
   };
   healthPath?: string;
+  triggerConfig?: RuntimeConfig["triggers"];
+  triggerDispatcher?: ReturnType<typeof createTriggerDispatcher>;
+  triggerStatusPresenter?: ReturnType<typeof createTriggerStatusPresenter>;
 };
 
 export function createGatewayApp(input: GatewayAppInput) {
   const app = new Hono();
   const handler = createFeishuWebhookHandler(input);
+  const triggerConfig = input.triggerConfig ?? {
+    scheduledJobs: [],
+    webhooks: [],
+  };
+  const triggerDefinitionSync = createTriggerDefinitionSync({
+    config: triggerConfig,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+    now: input.now,
+  });
+  const triggerDispatcher = input.triggerDispatcher ?? createTriggerDispatcher({
+    agentConfig: input.agentConfig,
+    queue: input.queue,
+    repositories: input.repositories,
+    notifier: input.notifier,
+    logger: input.logger,
+    now: input.now,
+  });
+  const triggerStatusPresenter = input.triggerStatusPresenter ?? createTriggerStatusPresenter({
+    repositories: input.repositories,
+  });
   const healthPath = input.healthPath ?? "/healthz";
 
   app.post("/webhooks/feishu", async (context) => {
@@ -25,6 +56,20 @@ export function createGatewayApp(input: GatewayAppInput) {
       "x-feishu-signature": context.req.header("x-feishu-signature"),
     });
     return context.json(result.body, result.status as 200 | 202 | 400 | 401 | 403);
+  });
+  registerExternalWebhookRoute({
+    app,
+    logger: input.logger,
+    repositories: input.repositories,
+    triggerConfig,
+    triggerDefinitionSync,
+    triggerDispatcher,
+    now: input.now,
+  });
+  registerInternalTriggersRoutes({
+    app,
+    triggerDefinitionSync,
+    triggerStatusPresenter,
   });
 
   app.get(healthPath, async (context) => {
