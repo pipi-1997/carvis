@@ -1,0 +1,22 @@
+{
+  "id": "adversarial-noisy-chat-not-memory",
+  "suite": "L3-adversarial",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-adv",
+      "messageId": "msg-401",
+      "text": "我有点烦，你先想想，别急着回答"
+    }
+  ],
+  "expectation": {
+    "intent": "not_memory",
+    "expectedWrites": [],
+    "recalledItemTitles": [],
+    "forbiddenItemTitles": [
+      "memory-write"
+    ],
+    "gateCritical": false
+  }
+}

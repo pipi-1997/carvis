@@ -1,0 +1,38 @@
+{
+  "id": "golden-update-supersedes-old-fact",
+  "suite": "L1-golden",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-update",
+      "messageId": "msg-201",
+      "text": "/remember 本项目使用 yarn"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update",
+      "messageId": "msg-202",
+      "text": "之前说用 yarn 作废，现在统一 bun"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update",
+      "messageId": "msg-203",
+      "text": "怎么启动这个项目"
+    }
+  ],
+  "expectation": {
+    "intent": "update",
+    "expectedWrites": [
+      "bun"
+    ],
+    "recalledItemTitles": [
+      "bun"
+    ],
+    "forbiddenItemTitles": [
+      "yarn"
+    ],
+    "gateCritical": true
+  }
+}

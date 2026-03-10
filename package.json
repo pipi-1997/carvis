@@ -13,6 +13,8 @@
     "start:gateway": "bun run --filter @carvis/gateway dev",
     "start:executor": "bun run --filter @carvis/executor dev",
     "test:003": "bun test tests/unit/presentation-setup.test.ts tests/unit/runtime-harness.test.ts",
+    "test:memory-benchmark": "bun test tests/contract/memory-benchmark-runner.contract.test.ts tests/contract/memory-benchmark-gate.contract.test.ts tests/integration/memory-benchmark.test.ts tests/integration/memory-benchmark-golden-scenarios.test.ts tests/integration/memory-benchmark-suite-coverage.test.ts tests/integration/memory-benchmark-gate.test.ts",
+    "test:memory-benchmark:gate": "bun run test:memory-benchmark",
     "test:unit": "bun test tests/unit",
     "lint": "bunx tsc --noEmit",
     "test": "bun test"

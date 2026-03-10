@@ -1,0 +1,30 @@
+{
+  "id": "golden-natural-language-remember",
+  "suite": "L1-golden",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-nl",
+      "messageId": "msg-101",
+      "text": "记住这个，以后默认先给结论再给细节"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-nl",
+      "messageId": "msg-102",
+      "text": "现在总结一下这个方案"
+    }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": [
+      "默认先给结论再给细节"
+    ],
+    "recalledItemTitles": [
+      "默认先给结论再给细节"
+    ],
+    "forbiddenItemTitles": [],
+    "gateCritical": true
+  }
+}

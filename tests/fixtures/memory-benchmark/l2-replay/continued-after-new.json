@@ -1,0 +1,36 @@
+{
+  "id": "replay-continued-after-new",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-replay",
+      "messageId": "msg-301",
+      "text": "/remember 本项目统一使用 bun"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-replay",
+      "messageId": "msg-302",
+      "text": "/new"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-replay",
+      "messageId": "msg-303",
+      "text": "怎么启动这个项目"
+    }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": [
+      "bun"
+    ],
+    "recalledItemTitles": [
+      "bun"
+    ],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

@@ -157,6 +157,17 @@ export function createHarness(options?: {
   }> = [];
   const sentMessages: OutboundMessage[] = [];
   const bridgeRequests: RunRequest[] = [];
+  const memoryBenchmarkTrace = {
+    bridgeRequests: [] as Array<{
+      prompt: string;
+      workspace: string;
+      sessionMode: string;
+    }>,
+    userVisibleOutputs: [] as Array<{
+      kind: string;
+      content: string;
+    }>,
+  };
   const presentationOperations: Array<
     | {
         action: "create-card";
@@ -263,6 +274,10 @@ export function createHarness(options?: {
           throw new Error("send message failed");
         }
         sentMessages.push(message);
+        memoryBenchmarkTrace.userVisibleOutputs.push({
+          kind: message.kind,
+          content: message.content,
+        });
         return {
           messageId: `delivery-${Math.random().toString(36).slice(2, 10)}`,
         };
@@ -331,6 +346,11 @@ export function createHarness(options?: {
     transport: {
       async *run(request, input) {
         bridgeRequests.push(request);
+        memoryBenchmarkTrace.bridgeRequests.push({
+          prompt: request.prompt,
+          workspace: request.workspace,
+          sessionMode: request.sessionMode ?? "fresh",
+        });
         for await (const chunk of transport.run(request, input)) {
           yield chunk;
         }
@@ -464,6 +484,7 @@ export function createHarness(options?: {
     getInternalTriggers,
     heartbeats,
     logger,
+    memoryBenchmarkTrace,
     notifier,
     postFeishuText,
     postExternalWebhook,
