@@ -1,0 +1,22 @@
+{
+  "id": "golden-not-memory-chat",
+  "suite": "L1-golden",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-benchmark",
+      "messageId": "msg-010",
+      "text": "你先想想这个问题"
+    }
+  ],
+  "expectation": {
+    "intent": "not_memory",
+    "expectedWrites": [],
+    "recalledItemTitles": [],
+    "forbiddenItemTitles": [
+      "memory-write"
+    ],
+    "gateCritical": true
+  }
+}
