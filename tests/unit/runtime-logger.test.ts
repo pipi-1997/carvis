@@ -164,4 +164,68 @@ describe("runtime logger", () => {
       },
     });
   });
+
+  test("presentation transform 会输出 normalized 与 degraded 日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.presentationState("normalized", {
+      mode: "streaming",
+      outcome: "normalized",
+      runId: "run-001",
+    });
+    logger.presentationState("degraded", {
+      mode: "terminal",
+      outcome: "degraded",
+      runId: "run-001",
+      degradedFragments: ["div"],
+    });
+
+    expect(logger.listEntries()).toEqual([
+      {
+        level: "info",
+        message: "presentation.feishu.normalized",
+        context: {
+          mode: "streaming",
+          outcome: "normalized",
+          role: "gateway",
+          runId: "run-001",
+        },
+      },
+      {
+        level: "warn",
+        message: "presentation.feishu.degraded",
+        context: {
+          degradedFragments: ["div"],
+          mode: "terminal",
+          outcome: "degraded",
+          role: "gateway",
+          runId: "run-001",
+        },
+      },
+    ]);
+  });
+
+  test("presentation transform 日志角色可按运行进程标注为 executor", () => {
+    const logger = createRuntimeLogger();
+
+    logger.presentationState("normalized", {
+      mode: "streaming",
+      outcome: "normalized",
+      role: "executor",
+      runId: "run-002",
+    });
+
+    expect(logger.listEntries()).toEqual([
+      {
+        level: "info",
+        message: "presentation.feishu.normalized",
+        context: {
+          mode: "streaming",
+          outcome: "normalized",
+          role: "executor",
+          runId: "run-002",
+        },
+      },
+    ]);
+  });
 });

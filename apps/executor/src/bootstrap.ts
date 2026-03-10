@@ -64,6 +64,8 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
       appSecret: services.config.secrets.feishuAppSecret,
       failCardCreate: options.env?.CARVIS_FAIL_CARD_CREATE === "1",
       failCardUpdate: options.env?.CARVIS_FAIL_CARD_UPDATE === "1",
+      logger: services.logger,
+      presentationRole: "executor",
     }),
   });
   const presentationOrchestrator = createPresentationOrchestrator({

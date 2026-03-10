@@ -81,6 +81,15 @@ type ExternalWebhookStateInput = {
   reason?: string | null;
 };
 
+type PresentationStateInput = {
+  runId: string;
+  mode?: "streaming" | "terminal";
+  outcome?: "preserved" | "normalized" | "degraded" | "fallback_terminal";
+  degradedFragments?: string[];
+  reason?: string;
+  role?: "gateway" | "executor";
+};
+
 export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
   return {
     commandState(status: "recognized" | "unknown" | "mention_normalized", input: CommandStateInput) {
@@ -108,6 +117,22 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         status,
         slug: input.slug,
         ...(input.definitionId ? { definitionId: input.definitionId } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
+    presentationState(
+      status: "preserved" | "normalized" | "degraded" | "fallback_terminal" | "card_create_failed" | "card_update_failed" | "card_complete_failed",
+      input: PresentationStateInput,
+    ) {
+      const level = status === "degraded" || status.endsWith("_failed") ? "warn" : "info";
+      baseLogger[level](`presentation.feishu.${status}`, {
+        role: input.role ?? "gateway",
+        runId: input.runId,
+        ...(input.mode ? { mode: input.mode } : {}),
+        ...(input.outcome ? { outcome: input.outcome } : {}),
+        ...(input.degradedFragments && input.degradedFragments.length > 0
+          ? { degradedFragments: input.degradedFragments }
+          : {}),
         ...(input.reason ? { reason: input.reason } : {}),
       });
     },
