@@ -8,6 +8,7 @@ type StartGatewayOptions = {
   clearIntervalFn?: (timer: Timer) => void;
   env?: Record<string, string | undefined>;
   reaperIntervalMs?: number;
+  schedulerIntervalMs?: number;
   serve?: (options: {
     fetch: (request: Request) => Response | Promise<Response>;
     port: number;
@@ -49,6 +50,12 @@ export async function startGateway(options: StartGatewayOptions = {}) {
     () => runtime.reaper.reapExpiredRuns(),
     options.reaperIntervalMs ?? 1_000,
   );
+  const schedulerTimer = setIntervalImpl(
+    async () => {
+      await runtime.scheduler.runOnce();
+    },
+    options.schedulerIntervalMs ?? 1_000,
+  );
 
   runtime.services.logger.gatewayState(runtime.health.status(), {
     configFingerprint: runtime.services.configFingerprint,
@@ -68,6 +75,7 @@ export async function startGateway(options: StartGatewayOptions = {}) {
     },
     async stop() {
       clearIntervalImpl(reaperTimer);
+      clearIntervalImpl(schedulerTimer);
       await runtime.stop();
       await server.stop?.();
     },

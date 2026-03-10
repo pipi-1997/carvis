@@ -14,6 +14,7 @@ import { handleBindCommand } from "../commands/bind.ts";
 import { handleHelpCommand } from "../commands/help.ts";
 import { handleNewCommand } from "../commands/new.ts";
 import { handleStatusCommand } from "../commands/status.ts";
+import { resolveRequestedSession } from "../services/continuation-binding.ts";
 import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
 import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
 
@@ -250,7 +251,10 @@ export function createFeishuWebhookHandler(input: {
       trigger: "prompt",
     });
 
-    const requestedSessionMode = binding?.bridgeSessionId ? "continuation" : "fresh";
+    const { requestedSessionMode, requestedBridgeSessionId } = resolveRequestedSession({
+      binding,
+      workspace: resolvedWorkspace.workspacePath,
+    });
     const activeRun = await input.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
     const run = await input.repositories.runs.createQueuedRun({
       sessionId: session.id,
@@ -261,7 +265,7 @@ export function createFeishuWebhookHandler(input: {
       triggerUserId: envelope.userId,
       timeoutSeconds: input.agentConfig.timeoutSeconds,
       requestedSessionMode,
-      requestedBridgeSessionId: binding?.bridgeSessionId ?? null,
+      requestedBridgeSessionId,
       now: now(),
     });
     const queuePosition = (await input.queue.enqueue(resolvedWorkspace.workspacePath, run.id)) + (activeRun ? 1 : 0);

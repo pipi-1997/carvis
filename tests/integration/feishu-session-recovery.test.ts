@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
-import { TEST_AGENT_CONFIG, createHarness } from "../support/harness.ts";
+import { createHarness } from "../support/harness.ts";
 
 describe("Feishu session recovery", () => {
   test("续聊 session 失效后只自动恢复一次，并回写新绑定", async () => {
@@ -29,7 +29,7 @@ describe("Feishu session recovery", () => {
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
-      agentConfig: TEST_AGENT_CONFIG,
+      agentConfig: harness.agentConfig,
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({
@@ -108,7 +108,7 @@ describe("Feishu session recovery", () => {
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
-      agentConfig: TEST_AGENT_CONFIG,
+      agentConfig: harness.agentConfig,
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({
@@ -158,7 +158,7 @@ describe("Feishu session recovery", () => {
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
-      agentConfig: TEST_AGENT_CONFIG,
+      agentConfig: harness.agentConfig,
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({
@@ -210,7 +210,7 @@ describe("Feishu session recovery", () => {
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
-      agentConfig: TEST_AGENT_CONFIG,
+      agentConfig: harness.agentConfig,
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({
@@ -266,7 +266,7 @@ describe("Feishu session recovery", () => {
     const session = await harness.repositories.sessions.getOrCreateSession({
       channel: "feishu",
       chatId: "chat-001",
-      agentConfig: TEST_AGENT_CONFIG,
+      agentConfig: harness.agentConfig,
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
     await harness.repositories.conversationSessionBindings.saveBindingContinuation({

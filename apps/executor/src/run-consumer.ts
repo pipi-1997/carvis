@@ -10,7 +10,7 @@ export function createRunConsumer(input: {
   workspaceLocks: WorkspaceLockDriver;
   runController: ReturnType<typeof createRunController>;
   notifier: {
-    notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
+    notifyRunEvent(session: { chatId: string } | null, event: RunEvent): Promise<void>;
   };
   now?: () => Date;
 }) {
@@ -49,12 +49,24 @@ export function createRunConsumer(input: {
         }
 
         try {
-          const session = await input.repositories.sessions.getSessionById(run.sessionId);
-          if (!session) {
-            throw new Error(`session not found: ${run.sessionId}`);
-          }
+          const session = run.sessionId
+            ? await input.repositories.sessions.getSessionById(run.sessionId)
+            : null;
 
           await input.repositories.runs.markRunStarted(run.id, now().toISOString());
+          if (run.triggerExecutionId) {
+            const execution = await input.repositories.triggerExecutions.updateExecution({
+              executionId: run.triggerExecutionId,
+              status: "running",
+              runId: run.id,
+              now: now(),
+            });
+            await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+              definitionId: execution.definitionId,
+              lastTriggerStatus: "running",
+              now: now(),
+            });
+          }
           const startedEvent = await input.repositories.events.appendEvent({
             runId: run.id,
             eventType: "run.started",
@@ -65,7 +77,7 @@ export function createRunConsumer(input: {
             },
             now: now(),
           });
-          await input.notifier.notifyRunEvent(session, startedEvent);
+          await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, startedEvent);
           await input.runController.execute(run);
           return true;
         } finally {

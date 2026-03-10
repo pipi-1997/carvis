@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import {
   buildRuntimeScope,
@@ -73,6 +74,186 @@ describe("runtime config", () => {
     expect(buildRuntimeFingerprint(baseConfig)).not.toBe(buildRuntimeFingerprint(changedConfig));
   });
 
+  test("加载 runtime trigger definitions 与 webhook secrets", async () => {
+    const harness = await createRuntimeHarness({
+      config: {
+        triggers: {
+          scheduledJobs: [
+            {
+              id: "daily-ops-report",
+              enabled: true,
+              workspace: "main",
+              schedule: "0 9 * * *",
+              promptTemplate: "生成今日巡检摘要",
+              delivery: {
+                kind: "feishu_chat",
+                chatId: "oc_ops_group",
+              },
+            },
+          ],
+          webhooks: [
+            {
+              id: "build-failed",
+              enabled: true,
+              slug: "build-failed",
+              workspace: "main",
+              promptTemplate: "分析 {{summary}}",
+              requiredFields: ["summary"],
+              secretEnv: "CARVIS_WEBHOOK_BUILD_FAILED_SECRET",
+              delivery: {
+                kind: "none",
+              },
+            },
+          ],
+        },
+      },
+      env: {
+        CARVIS_WEBHOOK_BUILD_FAILED_SECRET: "build-secret",
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+
+    const runtimeConfig = await loadRuntimeConfig({ env: harness.env });
+
+    expect(runtimeConfig.triggers.scheduledJobs).toHaveLength(1);
+    expect(runtimeConfig.triggers.webhooks).toHaveLength(1);
+    expect(runtimeConfig.triggers.webhooks[0]?.secret).toBe("build-secret");
+    expect(runtimeConfig.triggers.webhooks[0]?.slug).toBe("build-failed");
+  });
+
+  test("runtime fingerprint 对 trigger definitions 敏感", () => {
+    const baseConfig = createRuntimeConfigFixture({
+      triggers: {
+        scheduledJobs: [
+          {
+            id: "daily-ops-report",
+            enabled: true,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "0 9 * * *",
+            timezone: null,
+            promptTemplate: "生成今日巡检摘要",
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+        webhooks: [],
+      },
+    });
+    const changedConfig = createRuntimeConfigFixture({
+      triggers: {
+        scheduledJobs: [
+          {
+            id: "daily-ops-report",
+            enabled: true,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "30 9 * * *",
+            timezone: null,
+            promptTemplate: "生成今日巡检摘要",
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+        webhooks: [],
+      },
+    });
+
+    expect(buildRuntimeFingerprint(baseConfig)).not.toBe(buildRuntimeFingerprint(changedConfig));
+  });
+
+  test("加载 runtime trigger definitions 与 webhook secrets", async () => {
+    const harness = await createRuntimeHarness({
+      config: {
+        triggers: {
+          scheduledJobs: [
+            {
+              id: "daily-ops-report",
+              enabled: true,
+              workspace: "main",
+              schedule: "0 9 * * *",
+              promptTemplate: "生成今日巡检摘要",
+              delivery: {
+                kind: "feishu_chat",
+                chatId: "oc_ops_group",
+              },
+            },
+          ],
+          webhooks: [
+            {
+              id: "build-failed",
+              enabled: true,
+              slug: "build-failed",
+              workspace: "main",
+              promptTemplate: "分析 {{summary}}",
+              requiredFields: ["summary"],
+              secretEnv: "CARVIS_WEBHOOK_BUILD_FAILED_SECRET",
+              delivery: {
+                kind: "none",
+              },
+            },
+          ],
+        },
+      },
+      env: {
+        CARVIS_WEBHOOK_BUILD_FAILED_SECRET: "build-secret",
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+
+    const runtimeConfig = await loadRuntimeConfig({ env: harness.env });
+
+    expect(runtimeConfig.triggers.scheduledJobs).toHaveLength(1);
+    expect(runtimeConfig.triggers.webhooks).toHaveLength(1);
+    expect(runtimeConfig.triggers.webhooks[0]?.secret).toBe("build-secret");
+    expect(runtimeConfig.triggers.webhooks[0]?.slug).toBe("build-failed");
+  });
+
+  test("runtime fingerprint 对 trigger definitions 敏感", () => {
+    const baseConfig = createRuntimeConfigFixture({
+      triggers: {
+        scheduledJobs: [
+          {
+            id: "daily-ops-report",
+            enabled: true,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "0 9 * * *",
+            timezone: null,
+            promptTemplate: "生成今日巡检摘要",
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+        webhooks: [],
+      },
+    });
+    const changedConfig = createRuntimeConfigFixture({
+      triggers: {
+        scheduledJobs: [
+          {
+            id: "daily-ops-report",
+            enabled: true,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "30 9 * * *",
+            timezone: null,
+            promptTemplate: "生成今日巡检摘要",
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+        webhooks: [],
+      },
+    });
+
+    expect(buildRuntimeFingerprint(baseConfig)).not.toBe(buildRuntimeFingerprint(changedConfig));
+  });
+
   test("defaultWorkspace 未命中 registry 时拒绝加载", async () => {
     const harness = await createRuntimeHarness({
       config: {
@@ -131,6 +312,51 @@ describe("runtime config", () => {
     );
   });
 
+  test("defaultWorkspace 指向 managedWorkspaceRoot 之外时拒绝加载", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+    const externalWorkspace = join(harness.paths.homeDir, "external-repo");
+    const config = {
+      agent: {
+        id: "codex-main",
+        bridge: "codex",
+        defaultWorkspace: "main",
+        timeoutSeconds: 60,
+        maxConcurrent: 1,
+      },
+      gateway: {
+        port: 8787,
+        healthPath: "/healthz",
+      },
+      executor: {
+        pollIntervalMs: 1000,
+      },
+      feishu: {
+        allowFrom: ["*"],
+        requireMention: false,
+      },
+      workspaceResolver: {
+        registry: {
+          main: externalWorkspace,
+        },
+        chatBindings: {},
+        managedWorkspaceRoot: harness.paths.managedWorkspaceRoot,
+        templatePath: harness.paths.templateDir,
+      },
+      triggers: {
+        scheduledJobs: [],
+        webhooks: [],
+      },
+    };
+
+    await mkdir(externalWorkspace, { recursive: true });
+    await writeFile(harness.paths.configFile, JSON.stringify(config, null, 2));
+
+    await expect(loadRuntimeConfig({ env: harness.env })).rejects.toThrow(
+      "workspaceResolver.registry.main must stay within workspaceResolver.managedWorkspaceRoot",
+    );
+  });
+
   test("非 default registry workspace 路径不存在时拒绝加载", async () => {
     const harness = await createRuntimeHarness({
       config: {
@@ -177,6 +403,7 @@ type RuntimeConfigOverrides = {
   feishu?: Partial<RuntimeConfig["feishu"]>;
   workspaceResolver?: Partial<RuntimeConfig["workspaceResolver"]>;
   secrets?: Partial<RuntimeConfig["secrets"]>;
+  triggers?: Partial<RuntimeConfig["triggers"]>;
 };
 
 function createRuntimeConfigFixture(
@@ -214,6 +441,11 @@ function createRuntimeConfigFixture(
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-template",
       ...overrides.workspaceResolver,
+    },
+    triggers: {
+      scheduledJobs: [],
+      webhooks: [],
+      ...overrides.triggers,
     },
     secrets: {
       feishuAppId: "cli_test_app",

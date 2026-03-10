@@ -11,7 +11,7 @@ export function createRunController(input: {
   bridge: CodexBridge;
   logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   notifier: {
-    notifyRunEvent(session: { chatId: string }, event: RunEvent): Promise<void>;
+    notifyRunEvent(session: { chatId: string } | null, event: RunEvent): Promise<void>;
   };
   now?: () => Date;
 }) {
@@ -19,10 +19,9 @@ export function createRunController(input: {
 
   return {
     async execute(run: Run): Promise<void> {
-      const session = await input.repositories.sessions.getSessionById(run.sessionId);
-      if (!session) {
-        throw new Error(`session not found: ${run.sessionId}`);
-      }
+      const session = run.sessionId
+        ? await input.repositories.sessions.getSessionById(run.sessionId)
+        : null;
 
       await renewRunHeartbeat(input.heartbeats, run.id, now().getTime());
       let requestSessionMode = run.requestedSessionMode;
@@ -67,18 +66,20 @@ export function createRunController(input: {
                 shouldRetryFresh = true;
                 requestSessionMode = "fresh";
                 requestBridgeSessionId = null;
-                await input.repositories.conversationSessionBindings.markBindingInvalidated({
-                  session,
-                  reason: failureMessage,
-                  now: now(),
-                });
-                input.logger?.continuationBindingState("invalidated", {
-                  agentId: input.agentConfig.id,
-                  chatId: session.chatId,
-                  sessionId: session.id,
-                  runId: run.id,
-                  reason: failureMessage,
-                });
+                if (session) {
+                  await input.repositories.conversationSessionBindings.markBindingInvalidated({
+                    session,
+                    reason: failureMessage,
+                    now: now(),
+                  });
+                  input.logger?.continuationBindingState("invalidated", {
+                    agentId: input.agentConfig.id,
+                    chatId: session.chatId,
+                    sessionId: session.id,
+                    runId: run.id,
+                    reason: failureMessage,
+                  });
+                }
                 break;
               }
 
@@ -89,20 +90,22 @@ export function createRunController(input: {
                 now: now(),
               });
               if (recoveryAttempted) {
-                await input.repositories.conversationSessionBindings.markBindingInvalidated({
-                  session,
-                  reason: failureMessage,
-                  recoveryResult: "failed",
-                  now: now(),
-                });
-                input.logger?.continuationBindingState("recovery_failed", {
-                  agentId: input.agentConfig.id,
-                  chatId: session.chatId,
-                  sessionId: session.id,
-                  runId: run.id,
-                  reason: failureMessage,
-                  recoveryResult: "failed",
-                });
+                if (session) {
+                  await input.repositories.conversationSessionBindings.markBindingInvalidated({
+                    session,
+                    reason: failureMessage,
+                    recoveryResult: "failed",
+                    now: now(),
+                  });
+                  input.logger?.continuationBindingState("recovery_failed", {
+                    agentId: input.agentConfig.id,
+                    chatId: session.chatId,
+                    sessionId: session.id,
+                    runId: run.id,
+                    reason: failureMessage,
+                    recoveryResult: "failed",
+                  });
+                }
               }
               await input.repositories.runs.markRunFailed(
                 run.id,
@@ -114,19 +117,34 @@ export function createRunController(input: {
                   sessionRecoveryResult: recoveryAttempted ? "failed" : null,
                 },
               );
-              await input.notifier.notifyRunEvent(session, event);
+              if (run.triggerExecutionId) {
+                const execution = await input.repositories.triggerExecutions.updateExecution({
+                  executionId: run.triggerExecutionId,
+                  status: "failed",
+                  failureCode,
+                  failureMessage,
+                  finishedAt: now().toISOString(),
+                  now: now(),
+                });
+                await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+                  definitionId: execution.definitionId,
+                  lastTriggerStatus: "failed",
+                  now: now(),
+                });
+              }
+              await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, event);
               return;
             }
 
-            await input.repositories.events.appendEvent({
-              runId: run.id,
-              eventType: event.eventType,
-              payload: event.payload,
-              now: now(),
-            });
+              await input.repositories.events.appendEvent({
+                runId: run.id,
+                eventType: event.eventType,
+                payload: event.payload,
+                now: now(),
+              });
 
             if (event.eventType === "agent.summary" || event.eventType === "agent.output.delta") {
-              await input.notifier.notifyRunEvent(session, event);
+              await input.notifier.notifyRunEvent(session ?? { chatId: "" }, event);
               continue;
             }
 
@@ -139,16 +157,19 @@ export function createRunController(input: {
                 && !!resolvedBridgeSessionId
                 && resolvedBridgeSessionId !== requestBridgeSessionId;
               const recovered = recoveryAttempted || silentContinuationRecovery;
-              const currentBinding = await input.repositories.conversationSessionBindings.getBindingBySessionId(session.id);
+              const currentBinding = session
+                ? await input.repositories.conversationSessionBindings.getBindingBySessionId(session.id)
+                : null;
               const resetAfterRunCreated =
                 currentBinding?.status === "reset"
                 && typeof currentBinding.lastResetAt === "string"
                 && currentBinding.lastResetAt > run.createdAt;
-              if (resolvedBridgeSessionId && !resetAfterRunCreated) {
+              if (session && resolvedBridgeSessionId && !resetAfterRunCreated) {
                 await input.repositories.conversationSessionBindings.saveBindingContinuation({
                   session,
                   bridge: input.agentConfig.bridge,
                   bridgeSessionId: resolvedBridgeSessionId,
+                  workspace: run.workspace,
                   status: recovered ? "recovered" : "bound",
                   recoveryResult: recovered ? "recovered" : null,
                   now: now(),
@@ -172,7 +193,20 @@ export function createRunController(input: {
                   sessionRecoveryResult: recovered ? "recovered" : null,
                 },
               );
-              await input.notifier.notifyRunEvent(session, event);
+              if (run.triggerExecutionId) {
+                const execution = await input.repositories.triggerExecutions.updateExecution({
+                  executionId: run.triggerExecutionId,
+                  status: "completed",
+                  finishedAt: now().toISOString(),
+                  now: now(),
+                });
+                await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+                  definitionId: execution.definitionId,
+                  lastTriggerStatus: "completed",
+                  now: now(),
+                });
+              }
+              await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, event);
               return;
             }
 
@@ -182,7 +216,22 @@ export function createRunController(input: {
                 now().toISOString(),
                 String(event.payload.reason ?? "cancel requested"),
               );
-              await input.notifier.notifyRunEvent(session, event);
+              if (run.triggerExecutionId) {
+                const execution = await input.repositories.triggerExecutions.updateExecution({
+                  executionId: run.triggerExecutionId,
+                  status: "cancelled",
+                  failureCode: "cancelled",
+                  failureMessage: String(event.payload.reason ?? "cancel requested"),
+                  finishedAt: now().toISOString(),
+                  now: now(),
+                });
+                await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+                  definitionId: execution.definitionId,
+                  lastTriggerStatus: "cancelled",
+                  now: now(),
+                });
+              }
+              await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, event);
               return;
             }
           }
@@ -194,20 +243,22 @@ export function createRunController(input: {
       } catch (error) {
         const failureMessage = error instanceof Error ? error.message : String(error);
         if (recoveryAttempted) {
-          await input.repositories.conversationSessionBindings.markBindingInvalidated({
-            session,
-            reason: failureMessage,
-            recoveryResult: "failed",
-            now: now(),
-          });
-          input.logger?.continuationBindingState("recovery_failed", {
-            agentId: input.agentConfig.id,
-            chatId: session.chatId,
-            sessionId: session.id,
-            runId: run.id,
-            reason: failureMessage,
-            recoveryResult: "failed",
-          });
+          if (session) {
+            await input.repositories.conversationSessionBindings.markBindingInvalidated({
+              session,
+              reason: failureMessage,
+              recoveryResult: "failed",
+              now: now(),
+            });
+            input.logger?.continuationBindingState("recovery_failed", {
+              agentId: input.agentConfig.id,
+              chatId: session.chatId,
+              sessionId: session.id,
+              runId: run.id,
+              reason: failureMessage,
+              recoveryResult: "failed",
+            });
+          }
         }
         const failedEvent = await input.repositories.events.appendEvent({
           runId: run.id,
@@ -223,7 +274,22 @@ export function createRunController(input: {
           sessionRecoveryAttempted: recoveryAttempted,
           sessionRecoveryResult: recoveryAttempted ? "failed" : null,
         });
-        await input.notifier.notifyRunEvent(session, failedEvent);
+        if (run.triggerExecutionId) {
+          const execution = await input.repositories.triggerExecutions.updateExecution({
+            executionId: run.triggerExecutionId,
+            status: "failed",
+            failureCode: "bridge_error",
+            failureMessage,
+            finishedAt: now().toISOString(),
+            now: now(),
+          });
+          await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+            definitionId: execution.definitionId,
+            lastTriggerStatus: "failed",
+            now: now(),
+          });
+        }
+        await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, failedEvent);
       } finally {
         void cancelWatcher;
         await input.heartbeats.clear(run.id);

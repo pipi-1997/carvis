@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { createHarness } from "../support/harness.ts";
 
 describe("feishu bind command", () => {
@@ -211,5 +212,99 @@ describe("feishu bind command", () => {
     expect(harness.sentMessages.at(-1)?.kind).toBe("error");
     expect(harness.sentMessages.at(-1)?.content).toContain("workspace key");
     expect(await harness.repositories.workspaceCatalog.getEntryByWorkspaceKey("../escape")).toBeNull();
+  });
+
+  test("/bind 切换 workspace 后会重置续聊绑定，后续 prompt 强制 fresh", async () => {
+    const transport: CodexTransport = {
+      async *run(request) {
+        if (request.triggerMessageId === "msg-001") {
+          yield {
+            type: "result",
+            resultSummary: "已建立 ops 上下文",
+            bridgeSessionId: "thread-ops",
+            sessionOutcome: "created",
+          };
+          return;
+        }
+
+        yield {
+          type: "result",
+          resultSummary: "切换 workspace 后重新开始",
+          bridgeSessionId: "thread-main",
+          sessionOutcome: "created",
+        };
+      },
+    };
+    const harness = createHarness({
+      transport,
+      workspaceResolver: {
+        registry: {
+          main: "/tmp/carvis-workspace",
+          ops: "/tmp/carvis-ops-workspace",
+        },
+      },
+    });
+
+    await harness.postFeishuText("/bind ops", {
+      chat_id: "chat-switch",
+      chat_type: "group",
+      message_id: "msg-bind-001",
+      user_id: "user-001",
+    });
+
+    await harness.postFeishuText("先在 ops 建立上下文", {
+      chat_id: "chat-switch",
+      chat_type: "group",
+      message_id: "msg-001",
+      user_id: "user-001",
+    });
+    await harness.executor.processNext();
+
+    const session = await harness.repositories.sessions.getSessionByChat("feishu", "chat-switch");
+    const bindingBeforeSwitch = await harness.repositories.conversationSessionBindings.getBindingBySessionId(session!.id);
+    expect(bindingBeforeSwitch?.workspace).toBe("/tmp/carvis-ops-workspace");
+
+    const switchResponse = await harness.postFeishuText("/bind main", {
+      chat_id: "chat-switch",
+      chat_type: "group",
+      message_id: "msg-bind-002",
+      user_id: "user-001",
+    });
+    expect(switchResponse.status).toBe(200);
+
+    const bindingAfterSwitch = await harness.repositories.conversationSessionBindings.getBindingBySessionId(session!.id);
+    expect(bindingAfterSwitch).toMatchObject({
+      bridgeSessionId: null,
+      mode: "fresh",
+      status: "reset",
+    });
+
+    await harness.postFeishuText("切到 main 后的新问题", {
+      chat_id: "chat-switch",
+      chat_type: "group",
+      message_id: "msg-002",
+      user_id: "user-001",
+    });
+    await harness.executor.processNext();
+
+    expect(harness.bridgeRequests.map((request) => ({
+      messageId: request.triggerMessageId,
+      sessionMode: request.sessionMode ?? "fresh",
+      bridgeSessionId: request.bridgeSessionId ?? null,
+      workspace: request.workspace,
+    }))).toEqual([
+      {
+        messageId: "msg-001",
+        sessionMode: "fresh",
+        bridgeSessionId: null,
+        workspace: "/tmp/carvis-ops-workspace",
+      },
+      {
+        messageId: "msg-002",
+        sessionMode: "fresh",
+        bridgeSessionId: null,
+        workspace: "/tmp/carvis-workspace",
+      },
+    ]);
   });
 });

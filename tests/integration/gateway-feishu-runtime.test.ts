@@ -28,6 +28,10 @@ describe("gateway feishu runtime wiring", () => {
             requireMention: true,
           },
           workspaceResolver: harness.workspaceResolverConfig,
+          triggers: {
+            scheduledJobs: [],
+            webhooks: [],
+          },
           secrets: {
             feishuAppId: "cli_test_app",
             feishuAppSecret: "test_app_secret",

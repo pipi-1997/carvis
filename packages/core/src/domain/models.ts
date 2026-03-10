@@ -3,6 +3,18 @@ export type ChatType = "private" | "group";
 export type SessionStatus = "active" | "disabled";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type SessionMode = "fresh" | "continuation";
+export type TriggerSource = "chat_message" | "scheduled_job" | "external_webhook";
+export type TriggerDefinitionSourceType = Exclude<TriggerSource, "chat_message">;
+export type TriggerExecutionStatus =
+  | "accepted"
+  | "rejected"
+  | "missed"
+  | "skipped"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 export type ConversationSessionBindingStatus = "unbound" | "bound" | "reset" | "invalidated" | "recovered";
 export type ConversationSessionRecoveryResult = "recovered" | "failed";
 export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
@@ -15,6 +27,7 @@ export type ConversationSessionMemoryState =
   | "recent_recovered"
   | "recent_recovery_failed";
 export type DeliveryStatus = "pending" | "sent" | "failed";
+export type TriggerDeliveryKind = "none" | "feishu_chat";
 export type DeliveryKind =
   | "status"
   | "result"
@@ -40,6 +53,52 @@ export type PresentationPhase =
   | "failed"
   | "cancelled"
   | "degraded";
+
+export interface TriggerDeliveryTarget {
+  kind: TriggerDeliveryKind;
+  chatId?: string | null;
+  label?: string | null;
+}
+
+export interface TriggerDefinition {
+  id: string;
+  sourceType: TriggerDefinitionSourceType;
+  slug: string | null;
+  enabled: boolean;
+  workspace: string;
+  agentId: string;
+  promptTemplate: string;
+  deliveryTarget: TriggerDeliveryTarget;
+  scheduleExpr: string | null;
+  timezone: string | null;
+  nextDueAt: string | null;
+  lastTriggeredAt: string | null;
+  lastTriggerStatus: TriggerExecutionStatus | null;
+  secretRef: string | null;
+  requiredFields: string[];
+  optionalFields: string[];
+  replayWindowSeconds: number | null;
+  definitionHash?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TriggerExecution {
+  id: string;
+  definitionId: string;
+  sourceType: TriggerDefinitionSourceType;
+  status: TriggerExecutionStatus;
+  triggeredAt: string;
+  inputDigest: string | null;
+  runId: string | null;
+  deliveryStatus: DeliveryStatus | null;
+  rejectionReason: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AgentConfig {
   id: string;
@@ -100,33 +159,39 @@ export interface WorkspaceCatalogEntry {
 
 export interface RunRequest {
   id: string;
-  sessionId: string;
+  sessionId: string | null;
   agentId: string;
   workspace: string;
   prompt: string;
-  triggerMessageId: string;
-  triggerUserId: string;
+  triggerSource?: TriggerSource;
+  triggerExecutionId?: string | null;
+  triggerMessageId: string | null;
+  triggerUserId: string | null;
   timeoutSeconds: number;
   bridgeSessionId?: string | null;
   sessionMode?: SessionMode;
+  deliveryTarget?: TriggerDeliveryTarget | null;
   createdAt: string;
 }
 
 export interface Run {
   id: string;
-  sessionId: string;
+  sessionId: string | null;
   agentId: string;
   workspace: string;
   status: RunStatus;
   prompt: string;
-  triggerMessageId: string;
-  triggerUserId: string;
+  triggerSource: TriggerSource;
+  triggerExecutionId: string | null;
+  triggerMessageId: string | null;
+  triggerUserId: string | null;
   timeoutSeconds: number;
   requestedSessionMode: SessionMode;
   requestedBridgeSessionId: string | null;
   resolvedBridgeSessionId: string | null;
   sessionRecoveryAttempted: boolean;
   sessionRecoveryResult: ConversationSessionRecoveryResult | null;
+  deliveryTarget: TriggerDeliveryTarget | null;
   queuePosition: number | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -147,6 +212,7 @@ export interface RunEvent<TPayload = Record<string, unknown>> {
 export interface OutboundDelivery {
   id: string;
   runId: string | null;
+  triggerExecutionId: string | null;
   chatId: string;
   deliveryKind: DeliveryKind;
   content: string;

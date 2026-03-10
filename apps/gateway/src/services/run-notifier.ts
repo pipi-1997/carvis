@@ -1,4 +1,4 @@
-import type { OutboundMessage, RepositoryBundle, RunEvent, Session } from "@carvis/core";
+import type { OutboundMessage, RepositoryBundle, Run, RunEvent, Session } from "@carvis/core";
 import type { FeishuAdapter } from "@carvis/channel-feishu";
 
 const WORKING_REACTION_EMOJI = "OK";
@@ -18,57 +18,88 @@ export function createRunNotifier(input: {
 }) {
   const now = input.now ?? (() => new Date());
 
-  async function sendMessage(message: OutboundMessage) {
+  async function sendDelivery(inputMessage: OutboundMessage, run?: Run | null) {
     const delivery = await input.repositories.deliveries.createDelivery({
-      runId: message.runId,
-      chatId: message.chatId,
-      deliveryKind: message.kind,
-      content: message.content,
+      runId: inputMessage.runId,
+      triggerExecutionId: run?.triggerExecutionId ?? null,
+      chatId: inputMessage.chatId,
+      deliveryKind: inputMessage.kind,
+      content: inputMessage.content,
       now: now(),
     });
 
     try {
-      const delivered = await input.adapter.sendMessage(message);
+      const delivered = await input.adapter.sendMessage(inputMessage);
       await input.repositories.deliveries.markDeliverySent(delivery.id, now(), delivered.messageId);
+      if (run?.triggerExecutionId) {
+        await input.repositories.triggerExecutions.updateExecution({
+          executionId: run.triggerExecutionId,
+          deliveryStatus: "sent",
+          now: now(),
+        });
+      }
     } catch (error) {
       await input.repositories.deliveries.markDeliveryFailed(
         delivery.id,
         error instanceof Error ? error.message : String(error),
         now(),
       );
+      if (run?.triggerExecutionId) {
+        await input.repositories.triggerExecutions.updateExecution({
+          executionId: run.triggerExecutionId,
+          deliveryStatus: "failed",
+          now: now(),
+        });
+      }
     }
   }
 
-  async function notifyRunEvent(session: Session, event: RunEvent) {
+  async function sendMessage(message: OutboundMessage) {
+    await sendDelivery(message, message.runId ? await input.repositories.runs.getRunById(message.runId) : null);
+  }
+
+  async function notifyRunEvent(session: Session | { chatId: string } | null, event: RunEvent) {
     const run = await input.repositories.runs.getRunById(event.runId);
+    const isChatTriggered = run?.triggerSource === "chat_message" && !!run.sessionId;
+    const persistedSession =
+      !session && run?.sessionId ? await input.repositories.sessions.getSessionById(run.sessionId) : null;
+    const chatId = session?.chatId || persistedSession?.chatId || null;
 
     if (event.eventType === "run.queued") {
-      if (run?.triggerMessageId) {
+      if (isChatTriggered && run?.triggerMessageId) {
         await input.adapter.addReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
       }
-      await input.presentationOrchestrator?.handleRunQueued({
-        runId: event.runId,
-        sessionId: session.id,
-        chatId: session.chatId,
-      });
+      const presentationSession =
+        session && "id" in session ? session : persistedSession;
+      if (isChatTriggered && presentationSession) {
+        await input.presentationOrchestrator?.handleRunQueued({
+          runId: event.runId,
+          sessionId: presentationSession.id,
+          chatId: presentationSession.chatId,
+        });
+      }
       return;
     }
 
     if (event.eventType === "run.started") {
-      await input.presentationOrchestrator?.handleRunStarted({
-        runId: event.runId,
-        chatId: session.chatId,
-        title: "运行中",
-      });
+      if (isChatTriggered && chatId) {
+        await input.presentationOrchestrator?.handleRunStarted({
+          runId: event.runId,
+          chatId,
+          title: "运行中",
+        });
+      }
       return;
     }
 
     if (event.eventType === "agent.output.delta") {
-      await input.presentationOrchestrator?.handleOutputDelta({
-        runId: event.runId,
-        sequence: Number(event.payload.sequence ?? 0),
-        text: String(event.payload.delta_text ?? ""),
-      });
+      if (isChatTriggered) {
+        await input.presentationOrchestrator?.handleOutputDelta({
+          runId: event.runId,
+          sequence: Number(event.payload.sequence ?? 0),
+          text: String(event.payload.delta_text ?? ""),
+        });
+      }
       return;
     }
 
@@ -76,11 +107,11 @@ export function createRunNotifier(input: {
       return;
     }
 
-    if (run?.triggerMessageId) {
+    if (isChatTriggered && run?.triggerMessageId) {
       await input.adapter.removeReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
     }
 
-    if (input.presentationOrchestrator) {
+    if (isChatTriggered && input.presentationOrchestrator) {
       await input.presentationOrchestrator.handleTerminalEvent({
         runId: event.runId,
         terminalEvent: {
@@ -91,8 +122,15 @@ export function createRunNotifier(input: {
       return;
     }
 
-    const message = formatRunEventMessage(session.chatId, event);
-    await sendMessage(message);
+    const targetChatId = run?.deliveryTarget?.kind === "feishu_chat"
+      ? run.deliveryTarget.chatId ?? null
+      : chatId;
+    if (!targetChatId) {
+      return;
+    }
+
+    const message = formatRunEventMessage(targetChatId, event);
+    await sendDelivery(message, run);
   }
 
   return {

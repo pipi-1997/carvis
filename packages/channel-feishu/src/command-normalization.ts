@@ -12,12 +12,10 @@ type FeishuCommandEnvelopeFields = Pick<
 export function normalizeFeishuCommandText(input: {
   text: string;
   mentions?: FeishuMention[];
-  allowCommandMentionFallback?: boolean;
 }): FeishuCommandEnvelopeFields {
   const normalizedText = normalizeMentionPrefix(
     input.text,
     input.mentions ?? [],
-    input.allowCommandMentionFallback ?? false,
   );
   const parsed = parseCommand(normalizedText);
 
@@ -33,7 +31,6 @@ export function normalizeFeishuCommandText(input: {
 export function normalizeMentionPrefix(
   text: string,
   mentions: FeishuMention[],
-  allowCommandMentionFallback = false,
 ): string {
   let normalized = text.trim();
   if (!normalized.startsWith("@")) {
@@ -58,13 +55,6 @@ export function normalizeMentionPrefix(
       break;
     }
     normalized = stripped;
-  }
-
-  if (!strippedKnownMention && allowCommandMentionFallback) {
-    const stripped = normalized.replace(/^@\S+(?:[\s:：,，]+|$)/, "").trim();
-    if (stripped.startsWith("/")) {
-      return stripped;
-    }
   }
 
   return normalized;
