@@ -36,6 +36,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 0: Generate research.md (resolve all NEEDS CLARIFICATION)
    - Phase 1: Generate data-model.md, contracts/, quickstart.md
    - Phase 1: Document canonical entity changes, queue/lock behavior, timeout/cancel/heartbeat semantics, and operator-visible impacts for the feature
+   - For Carvis features involving agent `tool` / `MCP` / skill capabilities, default to always-available agent capabilities and agent-owned invocation decisions; do not plan gateway-side heuristic intent gates unless the user explicitly asks for them
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 

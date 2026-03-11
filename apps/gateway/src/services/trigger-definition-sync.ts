@@ -35,9 +35,11 @@ export function createTriggerDefinitionSync(input: TriggerDefinitionSyncInput) {
 
       const createdOrUpdated: string[] = [];
       for (const definition of nextConfigDefinitions) {
-        const existing = existingById.get(definition.id) ?? null;
+      const existing = existingById.get(definition.id) ?? null;
         await input.repositories.triggerDefinitions.upsertDefinition({
           ...definition,
+          definitionOrigin: (existing?.definitionOrigin ?? definition.definitionOrigin ?? "config") as "config" | "agent",
+          label: existing?.label ?? definition.label,
           nextDueAt: selectNextDueAt({
             existing,
             nextDueAt: definition.nextDueAt,
@@ -46,6 +48,10 @@ export function createTriggerDefinitionSync(input: TriggerDefinitionSyncInput) {
           now: timestamp,
           lastTriggeredAt: existing?.lastTriggeredAt ?? null,
           lastTriggerStatus: existing?.lastTriggerStatus ?? null,
+          lastManagedAt: existing?.lastManagedAt ?? timestamp.toISOString(),
+          lastManagedBySessionId: existing?.lastManagedBySessionId ?? null,
+          lastManagedByChatId: existing?.lastManagedByChatId ?? null,
+          lastManagementAction: existing?.definitionOrigin === "agent" ? existing?.lastManagementAction ?? "create" : "config_sync",
         });
         createdOrUpdated.push(definition.id);
       }
@@ -54,6 +60,9 @@ export function createTriggerDefinitionSync(input: TriggerDefinitionSyncInput) {
       const disabled: string[] = [];
       for (const definition of existingDefinitions) {
         if (runtimeDefinitionIds.has(definition.id)) {
+          continue;
+        }
+        if (definition.definitionOrigin === "agent") {
           continue;
         }
 
@@ -138,15 +147,21 @@ function createPersistedDefinition(input: {
   return {
     id: input.definitionId,
     sourceType: input.sourceType,
+    definitionOrigin: "config",
     slug: input.slug,
     enabled: input.enabled,
     workspace: input.workspace,
     agentId: input.agentId,
+    label: input.definitionId,
     promptTemplate: input.promptTemplate,
     deliveryTarget: input.deliveryTarget,
     scheduleExpr: input.scheduleExpr ?? null,
     timezone: input.timezone ?? null,
     nextDueAt,
+    lastManagedAt: input.now.toISOString(),
+    lastManagedBySessionId: null,
+    lastManagedByChatId: null,
+    lastManagementAction: "config_sync",
     secretRef: input.secretRef ?? null,
     requiredFields: [...(input.requiredFields ?? [])],
     optionalFields: [...(input.optionalFields ?? [])],

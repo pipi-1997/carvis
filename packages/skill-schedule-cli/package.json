@@ -1,0 +1,5 @@
+{
+  "name": "@carvis/skill-schedule-cli",
+  "private": true,
+  "type": "module"
+}

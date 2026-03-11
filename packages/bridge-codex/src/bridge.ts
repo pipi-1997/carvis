@@ -1,6 +1,11 @@
 import type { RunEvent, RunRequest } from "@carvis/core";
 
-type TransportChunk =
+export type ToolResultPayload = {
+  toolName: string;
+  result: Record<string, unknown>;
+};
+
+export type TransportChunk =
   | { type: "delta"; deltaText: string; sequence: number; source?: string }
   | { type: "summary"; summary: string; sequence: number }
   | {
@@ -9,17 +14,28 @@ type TransportChunk =
       bridgeSessionId?: string;
       sessionOutcome?: "created" | "continued" | "unchanged";
     }
+  | { type: "tool_call"; toolName: string; arguments: Record<string, unknown>; handledByTransport?: boolean }
+  | { type: "tool_result"; toolName: string; result: Record<string, unknown>; handledByTransport?: boolean }
   | { type: "error"; failureCode: string; failureMessage: string; sessionInvalid?: boolean }
   | { type: "cancelled"; reason?: string }
   | { type: "wait-for-cancel" };
 
+export type TransportRun = {
+  stream(): AsyncIterable<TransportChunk>;
+  submitToolResult?(input: ToolResultPayload): Promise<void>;
+  [Symbol.asyncIterator](): AsyncIterator<TransportChunk>;
+};
+
+type TransportRunLike = TransportRun | AsyncIterable<TransportChunk>;
+
 export interface CodexTransport {
-  run(request: RunRequest, options: { signal: AbortSignal }): AsyncIterable<TransportChunk>;
+  run(request: RunRequest, options: { signal: AbortSignal }): TransportRunLike;
 }
 
 interface BridgeHandle {
   runId: string;
   streamEvents(): AsyncIterable<RunEvent>;
+  submitToolResult(input: ToolResultPayload): Promise<void>;
 }
 
 export class CodexBridge {
@@ -43,15 +59,16 @@ export class CodexBridge {
     const controllers = this.controllers;
     const controller = new AbortController();
     this.controllers.set(request.id, controller);
-    const stream = this.transport.run(request, {
+    const rawTransportRun = this.transport.run(request, {
       signal: controller.signal,
     });
+    const transportRun = normalizeTransportRun(rawTransportRun);
 
     return {
       runId: request.id,
       streamEvents: async function* () {
         try {
-          for await (const chunk of stream) {
+          for await (const chunk of transportRun.stream()) {
             if (chunk.type === "delta") {
               yield {
                 id: `${request.id}:delta:${chunk.sequence}`,
@@ -77,6 +94,38 @@ export class CodexBridge {
                   run_id: request.id,
                   summary: chunk.summary,
                   sequence: chunk.sequence,
+                },
+                createdAt: now().toISOString(),
+              } satisfies RunEvent;
+              continue;
+            }
+
+            if (chunk.type === "tool_call") {
+              yield {
+                id: `${request.id}:tool_call`,
+                runId: request.id,
+                eventType: "agent.tool_call",
+                payload: {
+                  run_id: request.id,
+                  tool_name: chunk.toolName,
+                  arguments: chunk.arguments,
+                  ...(chunk.handledByTransport ? { handled_by_transport: true } : {}),
+                },
+                createdAt: now().toISOString(),
+              } satisfies RunEvent;
+              continue;
+            }
+
+            if (chunk.type === "tool_result") {
+              yield {
+                id: `${request.id}:tool_result`,
+                runId: request.id,
+                eventType: "agent.tool_result",
+                payload: {
+                  run_id: request.id,
+                  tool_name: chunk.toolName,
+                  result: chunk.result,
+                  ...(chunk.handledByTransport ? { handled_by_transport: true } : {}),
                 },
                 createdAt: now().toISOString(),
               } satisfies RunEvent;
@@ -134,6 +183,9 @@ export class CodexBridge {
           controllers.delete(request.id);
         }
       },
+      async submitToolResult(input) {
+        await transportRun.submitToolResult?.(input);
+      },
     };
   }
 
@@ -150,31 +202,91 @@ export class CodexBridge {
   }
 }
 
-export function createScriptedCodexTransport(script: TransportChunk[]): CodexTransport {
+function normalizeTransportRun(input: TransportRunLike): TransportRun {
+  if ("stream" in input && typeof input.stream === "function") {
+    return input;
+  }
   return {
-    async *run(_request, options) {
-      for (const step of script) {
-        if (step.type === "wait-for-cancel") {
-          await waitForAbort(options.signal);
-          yield {
-            type: "cancelled",
-            reason: "cancel requested",
-          };
-          return;
-        }
-
-        if (options.signal.aborted) {
-          yield {
-            type: "cancelled",
-            reason: "cancel requested",
-          };
-          return;
-        }
-
-        yield step;
-      }
+    stream() {
+      return input;
+    },
+    [Symbol.asyncIterator]() {
+      return input[Symbol.asyncIterator]();
     },
   };
+}
+
+export function createScriptedCodexTransport(script: TransportChunk[]): CodexTransport {
+  return {
+    run(_request, options) {
+      let pendingToolResult: ToolResultPayload | null = null;
+      let resolveToolResult: (() => void) | null = null;
+      const transportRun: TransportRun = {
+        async *stream() {
+          for (const step of script) {
+            if (step.type === "wait-for-cancel") {
+              await waitForAbort(options.signal);
+              yield {
+                type: "cancelled",
+                reason: "cancel requested",
+              } satisfies TransportChunk;
+              return;
+            }
+
+            if (options.signal.aborted) {
+              yield {
+                type: "cancelled",
+                reason: "cancel requested",
+              } satisfies TransportChunk;
+              return;
+            }
+
+            if (step.type === "tool_call") {
+              yield step;
+              if (step.handledByTransport) {
+                continue;
+              }
+              if (!pendingToolResult) {
+                await new Promise<void>((resolve) => {
+                  resolveToolResult = resolve;
+                });
+              }
+              if (options.signal.aborted) {
+                yield {
+                  type: "cancelled",
+                  reason: "cancel requested",
+                } satisfies TransportChunk;
+                return;
+              }
+              yield {
+                type: "result",
+                resultSummary: readToolResultSummary(pendingToolResult),
+              } satisfies TransportChunk;
+              return;
+            }
+
+            yield step;
+          }
+        },
+        async submitToolResult(input) {
+          pendingToolResult = input;
+          resolveToolResult?.();
+        },
+        [Symbol.asyncIterator]() {
+          return transportRun.stream()[Symbol.asyncIterator]();
+        },
+      };
+      return transportRun;
+    },
+  };
+}
+
+function readToolResultSummary(input: ToolResultPayload | null) {
+  if (!input) {
+    return "tool executed";
+  }
+  const summary = input.result.summary;
+  return typeof summary === "string" && summary.length > 0 ? summary : "tool executed";
 }
 
 async function waitForAbort(signal: AbortSignal): Promise<void> {

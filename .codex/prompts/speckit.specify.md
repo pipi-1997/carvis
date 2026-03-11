@@ -209,6 +209,7 @@ Given that feature description, do this:
 - Avoid HOW to implement (no tech stack, APIs, code structure).
 - Written for business stakeholders, not developers.
 - Preserve constitution-mandated operational clarity: if a feature affects queueing, execution, delivery, scheduler, or admin behavior, the spec MUST state the operator-visible outcome.
+- For Carvis features involving agent `tool` / `MCP` / skill capabilities, default to agent-owned decision-making: tools should be treated as capabilities exposed to the agent, and gateway-side heuristic intent gates should not be introduced unless the user explicitly requires them.
 - DO NOT create any checklists that are embedded in the spec. That will be a separate command.
 
 ### Section Requirements

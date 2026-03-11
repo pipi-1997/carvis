@@ -14,6 +14,7 @@ import { createTriggerDispatcher } from "../../apps/gateway/src/services/trigger
 import { createTriggerStatusPresenter } from "../../apps/gateway/src/services/trigger-status-presenter.ts";
 import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
+import { runCarvisScheduleCli } from "../../packages/carvis-schedule-cli/src/index.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
 import type { AgentConfig, OutboundMessage, RunRequest, RunStatus } from "../../packages/core/src/domain/models.ts";
 import type { RuntimeConfig } from "../../packages/core/src/domain/runtime-models.ts";
@@ -92,6 +93,10 @@ export function createFeishuPayload(text: string, overrides?: FeishuPayloadOverr
 export function createHarness(options?: {
   agentConfig?: Partial<AgentConfig>;
   transport?: CodexTransport;
+  transportFactory?: (input: {
+    agentConfig: AgentConfig;
+    gateway: ReturnType<typeof createGatewayApp>;
+  }) => CodexTransport;
   transportScript?: Parameters<typeof createScriptedCodexTransport>[0];
   heartbeatTtlMs?: number;
   allowChatIds?: string[];
@@ -319,25 +324,6 @@ export function createHarness(options?: {
   const triggerStatusPresenter = createTriggerStatusPresenter({
     repositories,
   });
-  const transport =
-    options?.transport ??
-    createScriptedCodexTransport(
-      options?.transportScript ?? [
-        { type: "summary", summary: "正在分析仓库", sequence: 1 },
-        { type: "result", resultSummary: "仓库目标已总结" },
-      ],
-    );
-  const bridge = new CodexBridge({
-    transport: {
-      async *run(request, input) {
-        bridgeRequests.push(request);
-        for await (const chunk of transport.run(request, input)) {
-          yield chunk;
-        }
-      },
-    },
-    now,
-  });
   const gateway = createGatewayApp({
     agentConfig,
     adapter,
@@ -353,6 +339,50 @@ export function createHarness(options?: {
     now,
     triggerConfig,
   });
+  const transport =
+    options?.transport ??
+    options?.transportFactory?.({
+      agentConfig,
+      gateway,
+    }) ??
+    createScriptedCodexTransport(
+      options?.transportScript ?? [
+        { type: "summary", summary: "正在分析仓库", sequence: 1 },
+        { type: "result", resultSummary: "仓库目标已总结" },
+      ],
+    );
+  const bridge = new CodexBridge({
+    transport: {
+      run(request, input) {
+        bridgeRequests.push(request);
+        const rawTransportRun = transport.run(request, input);
+        const transportRun = "stream" in rawTransportRun
+          ? rawTransportRun
+          : {
+              stream() {
+                return rawTransportRun;
+              },
+              [Symbol.asyncIterator]() {
+                return rawTransportRun[Symbol.asyncIterator]();
+              },
+            };
+        return {
+          stream() {
+            return transportRun.stream();
+          },
+          async submitToolResult(payload) {
+            if ("submitToolResult" in transportRun && typeof transportRun.submitToolResult === "function") {
+              await transportRun.submitToolResult(payload);
+            }
+          },
+          [Symbol.asyncIterator]() {
+            return transportRun.stream()[Symbol.asyncIterator]();
+          },
+        };
+      },
+    },
+    now,
+  });
   const executor = createExecutorWorker({
     agentConfig,
     repositories,
@@ -361,6 +391,27 @@ export function createHarness(options?: {
     cancelSignals,
     heartbeats,
     bridge,
+    toolInvoker: {
+      async execute({ run, session, toolName, arguments: args }) {
+        const response = await gateway.request("http://localhost/internal/run-tools/execute", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            toolName,
+            invocation: args,
+            workspace: run.workspace,
+            sessionId: session?.id ?? "",
+            chatId: session?.chatId ?? "",
+            userId: run.triggerUserId,
+            requestedText: run.prompt,
+          }),
+        });
+        const payload = await response.json() as { result: Record<string, unknown> };
+        return payload.result;
+      },
+    },
     notifier,
     now,
   });
@@ -422,6 +473,13 @@ export function createHarness(options?: {
     });
   }
 
+  async function getInternalManagedSchedules(path = "/internal/managed-schedules", query?: Record<string, string>) {
+    const search = query ? `?${new URLSearchParams(query).toString()}` : "";
+    return gateway.request(`http://localhost${path}${search}`, {
+      method: "GET",
+    });
+  }
+
   async function listRunStatuses(): Promise<RunStatus[]> {
     const runs = await repositories.runs.listRuns();
     return runs.map((run) => run.status);
@@ -462,6 +520,7 @@ export function createHarness(options?: {
     executor,
     gateway,
     getInternalTriggers,
+    getInternalManagedSchedules,
     heartbeats,
     logger,
     notifier,
@@ -487,6 +546,96 @@ export function createHarness(options?: {
     waitForHeartbeat,
     waitForRunStatus,
   };
+}
+
+export function createCliDrivenCodexTransport(input: {
+  command(argv: string[], request: RunRequest): string[];
+  fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response> | Response;
+}) : CodexTransport {
+  return {
+    run(request, _options) {
+      const transportRun = {
+        async *stream() {
+          const stdout: string[] = [];
+          const stderr: string[] = [];
+          const exitCode = await runCarvisScheduleCli(
+            input.command(buildCliContextArgs(request), request),
+            {
+              fetchImpl: input.fetchImpl,
+              stdout(text) {
+                stdout.push(text);
+              },
+              stderr(text) {
+                stderr.push(text);
+              },
+            },
+          );
+
+          const parsed = JSON.parse(stdout.at(-1) ?? "null") as {
+            status?: string;
+            summary?: string;
+          } | null;
+
+          if (exitCode === 4) {
+            yield {
+              type: "error" as const,
+              failureCode: "codex_exec_failed",
+              failureMessage: stderr.join("\n") || String(parsed?.summary ?? "carvis-schedule failed"),
+              sessionInvalid: false,
+            };
+            return;
+          }
+
+          yield {
+            type: "result" as const,
+            resultSummary: String(parsed?.summary ?? "carvis-schedule completed"),
+            sessionOutcome: (request.bridgeSessionId ? "continued" : "unchanged") as "continued" | "unchanged",
+          };
+        },
+        async submitToolResult() {
+          return;
+        },
+        [Symbol.asyncIterator]() {
+          return transportRun.stream()[Symbol.asyncIterator]();
+        },
+      };
+      return transportRun;
+    },
+  };
+}
+
+function buildCliContextArgs(request: RunRequest) {
+  const args = [
+    "--gateway-base-url",
+    "http://localhost",
+    "--workspace",
+    request.workspace,
+    "--session-id",
+    request.sessionId ?? "",
+    "--chat-id",
+    request.chatId ?? "",
+    "--requested-text",
+    extractOriginalUserPrompt(request.prompt),
+  ];
+  if (request.triggerUserId) {
+    args.push("--user-id", request.triggerUserId);
+  }
+  return args;
+}
+
+function extractOriginalUserPrompt(prompt: string) {
+  const marker = 'Original user request JSON: ';
+  const markerIndex = prompt.indexOf(marker);
+  if (markerIndex < 0) {
+    return prompt;
+  }
+
+  try {
+    const parsed = JSON.parse(prompt.slice(markerIndex + marker.length).trim()) as unknown;
+    return typeof parsed === "string" ? parsed : prompt;
+  } catch {
+    return prompt;
+  }
 }
 
 function writeStarterTemplate(templatePath: string) {

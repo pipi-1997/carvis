@@ -12,6 +12,7 @@ import { FeishuAdapter, createFeishuRuntimeSender } from "@carvis/channel-feishu
 
 import { createPresentationOrchestrator } from "../../gateway/src/services/presentation-orchestrator.ts";
 import { createRunNotifier } from "../../gateway/src/services/run-notifier.ts";
+import { createGatewayToolClient } from "./gateway-tool-client.ts";
 import { createExecutorWorker } from "./worker.ts";
 
 type ExecutorRuntimeServicesLike = {
@@ -55,7 +56,9 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
     options.createBridge?.() ??
     new CodexBridge({
       healthcheck: () => codexCliHealthcheck(),
-      transport: createCodexCliTransport(),
+      transport: createCodexCliTransport({
+        gatewayBaseUrl: `http://127.0.0.1:${services.config.gateway.port}`,
+      }),
     });
   const adapter = new FeishuAdapter({
     signingSecret: services.config.secrets.feishuAppSecret,
@@ -84,6 +87,9 @@ export async function bootstrapExecutorRuntime(options: BootstrapExecutorRuntime
     cancelSignals: services.cancelSignals,
     heartbeats: services.heartbeats,
     bridge,
+    toolInvoker: createGatewayToolClient({
+      baseUrl: `http://127.0.0.1:${services.config.gateway.port}`,
+    }),
     logger: services.logger,
     notifier,
   });

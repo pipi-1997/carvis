@@ -5,6 +5,7 @@ export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancell
 export type SessionMode = "fresh" | "continuation";
 export type TriggerSource = "chat_message" | "scheduled_job" | "external_webhook";
 export type TriggerDefinitionSourceType = Exclude<TriggerSource, "chat_message">;
+export type TriggerDefinitionOrigin = "config" | "agent";
 export type TriggerExecutionStatus =
   | "accepted"
   | "rejected"
@@ -18,6 +19,8 @@ export type TriggerExecutionStatus =
 export type ConversationSessionBindingStatus = "unbound" | "bound" | "reset" | "invalidated" | "recovered";
 export type ConversationSessionRecoveryResult = "recovered" | "failed";
 export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
+export type ScheduleManagementActionType = "create" | "list" | "update" | "disable" | "config_sync";
+export type ScheduleManagementResolutionStatus = "executed" | "needs_clarification" | "rejected";
 export type WorkspaceBindingSource = "default" | "config" | "manual" | "created" | "unbound";
 export type WorkspaceProvisionSource = "default" | "config" | "template_created";
 export type ConversationSessionMemoryState =
@@ -43,6 +46,8 @@ export type RunEventType =
   | "run.started"
   | "agent.output.delta"
   | "agent.summary"
+  | "agent.tool_call"
+  | "agent.tool_result"
   | "run.completed"
   | "run.failed"
   | "run.cancelled";
@@ -63,10 +68,12 @@ export interface TriggerDeliveryTarget {
 export interface TriggerDefinition {
   id: string;
   sourceType: TriggerDefinitionSourceType;
+  definitionOrigin?: TriggerDefinitionOrigin;
   slug: string | null;
   enabled: boolean;
   workspace: string;
   agentId: string;
+  label?: string;
   promptTemplate: string;
   deliveryTarget: TriggerDeliveryTarget;
   scheduleExpr: string | null;
@@ -74,6 +81,10 @@ export interface TriggerDefinition {
   nextDueAt: string | null;
   lastTriggeredAt: string | null;
   lastTriggerStatus: TriggerExecutionStatus | null;
+  lastManagedAt?: string | null;
+  lastManagedBySessionId?: string | null;
+  lastManagedByChatId?: string | null;
+  lastManagementAction?: ScheduleManagementActionType | null;
   secretRef: string | null;
   requiredFields: string[];
   optionalFields: string[];
@@ -81,6 +92,89 @@ export interface TriggerDefinition {
   definitionHash?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TriggerDefinitionOverride {
+  definitionId: string;
+  workspace: string;
+  label: string | null;
+  enabled: boolean | null;
+  scheduleExpr: string | null;
+  timezone: string | null;
+  promptTemplate: string | null;
+  deliveryTarget: TriggerDeliveryTarget | null;
+  managedBySessionId: string;
+  managedByChatId: string;
+  managedByUserId: string | null;
+  appliedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EffectiveManagedSchedule {
+  id: string;
+  definitionId: string;
+  sourceType: TriggerDefinitionSourceType;
+  definitionOrigin: TriggerDefinitionOrigin;
+  slug: string | null;
+  workspace: string;
+  agentId: string;
+  label: string;
+  enabled: boolean;
+  promptTemplate: string;
+  deliveryTarget: TriggerDeliveryTarget;
+  scheduleExpr: string | null;
+  timezone: string | null;
+  nextDueAt: string | null;
+  lastTriggeredAt: string | null;
+  lastTriggerStatus: TriggerExecutionStatus | null;
+  lastManagedAt: string | null;
+  lastManagedBySessionId: string | null;
+  lastManagedByChatId: string | null;
+  lastManagementAction: ScheduleManagementActionType | null;
+  secretRef: string | null;
+  requiredFields: string[];
+  optionalFields: string[];
+  replayWindowSeconds: number | null;
+  overridden: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleManagementAction {
+  id: string;
+  sessionId: string;
+  chatId: string;
+  workspace: string;
+  userId: string | null;
+  requestedText: string;
+  actionType: Exclude<ScheduleManagementActionType, "config_sync">;
+  resolutionStatus: ScheduleManagementResolutionStatus;
+  targetDefinitionId: string | null;
+  reason: string | null;
+  responseSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleToolInvocation {
+  workspace?: string;
+  actionType: Exclude<ScheduleManagementActionType, "config_sync">;
+  targetReference?: string | null;
+  definitionId?: string | null;
+  label?: string | null;
+  scheduleExpr?: string | null;
+  timezone?: string | null;
+  promptTemplate?: string | null;
+  deliveryTarget?: TriggerDeliveryTarget | null;
+}
+
+export interface ScheduleToolResult {
+  status: ScheduleManagementResolutionStatus;
+  reason: string | null;
+  question?: string | null;
+  targetDefinitionId: string | null;
+  summary: string;
 }
 
 export interface TriggerExecution {
@@ -160,9 +254,11 @@ export interface WorkspaceCatalogEntry {
 export interface RunRequest {
   id: string;
   sessionId: string | null;
+  chatId?: string | null;
   agentId: string;
   workspace: string;
   prompt: string;
+  managementMode?: "none" | "schedule";
   triggerSource?: TriggerSource;
   triggerExecutionId?: string | null;
   triggerMessageId: string | null;
@@ -181,6 +277,7 @@ export interface Run {
   workspace: string;
   status: RunStatus;
   prompt: string;
+  managementMode?: "none" | "schedule";
   triggerSource: TriggerSource;
   triggerExecutionId: string | null;
   triggerMessageId: string | null;
@@ -226,7 +323,7 @@ export interface OutboundDelivery {
 
 export interface RunPresentation {
   runId: string;
-  sessionId: string;
+  sessionId: string | null;
   chatId: string;
   phase: PresentationPhase;
   terminalStatus: Extract<RunStatus, "completed" | "failed" | "cancelled"> | null;

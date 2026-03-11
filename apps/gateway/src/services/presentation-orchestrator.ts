@@ -40,7 +40,7 @@ export function createPresentationOrchestrator(input: {
   const outputWindows = new Map<string, ReturnType<typeof createRunOutputWindow>>();
 
   return {
-    async handleRunQueued(event: { runId: string; sessionId: string; chatId: string }) {
+    async handleRunQueued(event: { runId: string; sessionId: string | null; chatId: string }) {
       return input.repositories.presentations.createPendingPresentation({
         runId: event.runId,
         sessionId: event.sessionId,
@@ -54,23 +54,17 @@ export function createPresentationOrchestrator(input: {
         if (!run) {
           throw new Error(`run not found: ${event.runId}`);
         }
-        if (!run.sessionId) {
-          return null;
-        }
-        const session = await input.repositories.sessions.getSessionById(run.sessionId);
-        if (!session) {
-          throw new Error(`session not found: ${run.sessionId}`);
-        }
         existing = await input.repositories.presentations.createPendingPresentation({
           runId: event.runId,
           sessionId: run.sessionId,
-          chatId: session.chatId,
+          chatId: event.chatId,
           now: now(),
         });
       }
 
       const delivery = await input.repositories.deliveries.createDelivery({
         runId: event.runId,
+        triggerExecutionId: (await input.repositories.runs.getRunById(event.runId))?.triggerExecutionId ?? null,
         chatId: event.chatId,
         deliveryKind: "card_create",
         content: "正在处理",
@@ -98,6 +92,16 @@ export function createPresentationOrchestrator(input: {
         now(),
         created.messageId,
       );
+      if (event.runId) {
+        const run = await input.repositories.runs.getRunById(event.runId);
+        if (run?.triggerExecutionId) {
+          await input.repositories.triggerExecutions.updateExecution({
+            executionId: run.triggerExecutionId,
+            deliveryStatus: "sent",
+            now: now(),
+          });
+        }
+      }
       outputWindows.set(event.runId, createRunOutputWindow());
       input.logger?.info("presentation.card_create.sent", {
         cardId: created.cardId,
@@ -133,6 +137,7 @@ export function createPresentationOrchestrator(input: {
 
       const delivery = await input.repositories.deliveries.createDelivery({
         runId: event.runId,
+        triggerExecutionId: (await input.repositories.runs.getRunById(event.runId))?.triggerExecutionId ?? null,
         chatId: presentation.chatId,
         deliveryKind: "card_update",
         content: state.visibleText,
@@ -193,6 +198,7 @@ export function createPresentationOrchestrator(input: {
       if (presentation.streamingCardId && presentation.streamingElementId) {
         const cardDelivery = await input.repositories.deliveries.createDelivery({
           runId: event.runId,
+          triggerExecutionId: run.triggerExecutionId ?? null,
           chatId: presentation.chatId,
           deliveryKind: "card_complete",
           content: terminalMessage.content,
@@ -213,6 +219,13 @@ export function createPresentationOrchestrator(input: {
             now(),
             presentation.streamingCardId,
           );
+          if (run.triggerExecutionId) {
+            await input.repositories.triggerExecutions.updateExecution({
+              executionId: run.triggerExecutionId,
+              deliveryStatus: "sent",
+              now: now(),
+            });
+          }
           await input.repositories.presentations.markPresentationTerminal({
             runId: event.runId,
             phase: terminalStatus,
@@ -232,6 +245,13 @@ export function createPresentationOrchestrator(input: {
             error instanceof Error ? error.message : String(error),
             now(),
           );
+          if (run.triggerExecutionId) {
+            await input.repositories.triggerExecutions.updateExecution({
+              executionId: run.triggerExecutionId,
+              deliveryStatus: "failed",
+              now: now(),
+            });
+          }
           await markPresentationDegraded(event.runId, error);
         }
       }
@@ -253,6 +273,7 @@ export function createPresentationOrchestrator(input: {
       const fallbackMessage = formatTerminalResultMessage(fallbackDocument);
       const fallbackDelivery = await input.repositories.deliveries.createDelivery({
         runId: event.runId,
+        triggerExecutionId: run.triggerExecutionId ?? null,
         chatId: presentation.chatId,
         deliveryKind: "fallback_terminal",
         content: fallbackMessage.content,
@@ -271,6 +292,13 @@ export function createPresentationOrchestrator(input: {
           now(),
           delivered.messageId,
         );
+        if (run.triggerExecutionId) {
+          await input.repositories.triggerExecutions.updateExecution({
+            executionId: run.triggerExecutionId,
+            deliveryStatus: "sent",
+            now: now(),
+          });
+        }
         await input.repositories.presentations.attachFallbackTerminal({
           runId: event.runId,
           fallbackTerminalMessageId: delivered.messageId,
@@ -287,6 +315,13 @@ export function createPresentationOrchestrator(input: {
           error instanceof Error ? error.message : String(error),
           now(),
         );
+        if (run.triggerExecutionId) {
+          await input.repositories.triggerExecutions.updateExecution({
+            executionId: run.triggerExecutionId,
+            deliveryStatus: "failed",
+            now: now(),
+          });
+        }
         input.logger?.error("presentation.fallback_terminal.failed", {
           error: error instanceof Error ? error.message : String(error),
           runId: event.runId,

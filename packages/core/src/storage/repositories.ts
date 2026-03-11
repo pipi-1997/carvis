@@ -7,16 +7,21 @@ import type {
   ConversationSessionRecoveryResult,
   DeliveryKind,
   DeliveryStatus,
+  EffectiveManagedSchedule,
   OutboundDelivery,
   PresentationPhase,
   Run,
   RunEvent,
   RunPresentation,
   RunStatus,
+  ScheduleManagementAction,
+  ScheduleManagementActionType,
+  ScheduleManagementResolutionStatus,
   SessionMode,
   Session,
   SessionWorkspaceBinding,
   TriggerDefinition,
+  TriggerDefinitionOverride,
   TriggerExecution,
   TriggerExecutionStatus,
   TriggerSource,
@@ -32,6 +37,42 @@ function nowIso(now = new Date()) {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function buildEffectiveManagedSchedule(
+  definition: TriggerDefinition,
+  override: TriggerDefinitionOverride | null,
+): EffectiveManagedSchedule {
+  const lastManagedAt = override?.appliedAt ?? definition.lastManagedAt ?? null;
+  return {
+    id: definition.id,
+    definitionId: definition.id,
+    sourceType: definition.sourceType,
+    definitionOrigin: definition.definitionOrigin ?? "config",
+    slug: definition.slug,
+    workspace: definition.workspace,
+    agentId: definition.agentId,
+    label: override?.label ?? definition.label ?? definition.id,
+    enabled: override?.enabled ?? definition.enabled,
+    promptTemplate: override?.promptTemplate ?? definition.promptTemplate,
+    deliveryTarget: clone(override?.deliveryTarget ?? definition.deliveryTarget),
+    scheduleExpr: override?.scheduleExpr ?? definition.scheduleExpr,
+    timezone: override?.timezone ?? definition.timezone,
+    nextDueAt: definition.nextDueAt,
+    lastTriggeredAt: definition.lastTriggeredAt,
+    lastTriggerStatus: definition.lastTriggerStatus,
+    lastManagedAt,
+    lastManagedBySessionId: override?.managedBySessionId ?? definition.lastManagedBySessionId ?? null,
+    lastManagedByChatId: override?.managedByChatId ?? definition.lastManagedByChatId ?? null,
+    lastManagementAction: override ? definition.lastManagementAction ?? "update" : definition.lastManagementAction ?? null,
+    secretRef: definition.secretRef ?? null,
+    requiredFields: [...definition.requiredFields],
+    optionalFields: [...definition.optionalFields],
+    replayWindowSeconds: definition.replayWindowSeconds ?? null,
+    overridden: !!override,
+    createdAt: definition.createdAt,
+    updatedAt: override?.updatedAt ?? definition.updatedAt,
+  };
 }
 
 export interface SessionRepository {
@@ -99,6 +140,7 @@ export interface RunRepository {
     agentId: string;
     workspace: string;
     prompt: string;
+    managementMode?: Run["managementMode"];
     triggerSource?: TriggerSource;
     triggerExecutionId?: string | null;
     triggerMessageId: string | null;
@@ -170,7 +212,7 @@ export interface DeliveryRepository {
 export interface PresentationRepository {
   createPendingPresentation(input: {
     runId: string;
-    sessionId: string;
+    sessionId: string | null;
     chatId: string;
     now?: Date;
   }): Promise<RunPresentation>;
@@ -211,8 +253,10 @@ export interface PresentationRepository {
 
 export interface TriggerDefinitionRepository {
   getDefinitionById(definitionId: string): Promise<TriggerDefinition | null>;
+  getEffectiveDefinitionById(definitionId: string): Promise<EffectiveManagedSchedule | null>;
   getDefinitionBySlug(slug: string): Promise<TriggerDefinition | null>;
   listDefinitions(): Promise<TriggerDefinition[]>;
+  listEffectiveDefinitions(): Promise<EffectiveManagedSchedule[]>;
   upsertDefinition(input: Omit<TriggerDefinition, "createdAt" | "updatedAt"> & { now?: Date }): Promise<TriggerDefinition>;
   updateDefinitionRuntimeState(input: {
     definitionId: string;
@@ -222,6 +266,22 @@ export interface TriggerDefinitionRepository {
     enabled?: boolean;
     now?: Date;
   }): Promise<TriggerDefinition>;
+}
+
+export interface TriggerDefinitionOverrideRepository {
+  getOverrideByDefinitionId(definitionId: string): Promise<TriggerDefinitionOverride | null>;
+  listOverrides(): Promise<TriggerDefinitionOverride[]>;
+  upsertOverride(
+    input: Omit<TriggerDefinitionOverride, "createdAt" | "updatedAt"> & { now?: Date },
+  ): Promise<TriggerDefinitionOverride>;
+}
+
+export interface ScheduleManagementActionRepository {
+  createAction(
+    input: Omit<ScheduleManagementAction, "id" | "createdAt" | "updatedAt"> & { now?: Date },
+  ): Promise<ScheduleManagementAction>;
+  listActions(): Promise<ScheduleManagementAction[]>;
+  listActionsByDefinition(definitionId: string): Promise<ScheduleManagementAction[]>;
 }
 
 export interface TriggerExecutionRepository {
@@ -262,7 +322,9 @@ export interface RepositoryBundle {
   sessionWorkspaceBindings: SessionWorkspaceBindingRepository;
   workspaceCatalog: WorkspaceCatalogRepository;
   triggerDefinitions: TriggerDefinitionRepository;
+  triggerDefinitionOverrides: TriggerDefinitionOverrideRepository;
   triggerExecutions: TriggerExecutionRepository;
+  scheduleManagementActions: ScheduleManagementActionRepository;
   runs: RunRepository;
   events: RunEventRepository;
   deliveries: DeliveryRepository;
@@ -281,7 +343,9 @@ export function createInMemoryRepositories(): RepositoryBundle {
   const workspaceCatalog = new Map<string, WorkspaceCatalogEntry>();
   const triggerDefinitions = new Map<string, TriggerDefinition>();
   const triggerDefinitionIdsBySlug = new Map<string, string>();
+  const triggerDefinitionOverrides = new Map<string, TriggerDefinitionOverride>();
   const triggerExecutions = new Map<string, TriggerExecution>();
+  const scheduleManagementActions = new Map<string, ScheduleManagementAction>();
   const runs = new Map<string, Run>();
   const runIdsBySession = new Map<string, string[]>();
   const events = new Map<string, Array<RunEvent<Record<string, unknown>>>>();
@@ -466,6 +530,13 @@ export function createInMemoryRepositories(): RepositoryBundle {
     async getDefinitionById(definitionId) {
       return clone(triggerDefinitions.get(definitionId) ?? null);
     },
+    async getEffectiveDefinitionById(definitionId) {
+      const definition = triggerDefinitions.get(definitionId) ?? null;
+      if (!definition) {
+        return null;
+      }
+      return clone(buildEffectiveManagedSchedule(definition, triggerDefinitionOverrides.get(definitionId) ?? null));
+    },
     async getDefinitionBySlug(slug) {
       const definitionId = triggerDefinitionIdsBySlug.get(slug);
       return definitionId ? clone(triggerDefinitions.get(definitionId) ?? null) : null;
@@ -473,16 +544,24 @@ export function createInMemoryRepositories(): RepositoryBundle {
     async listDefinitions() {
       return Array.from(triggerDefinitions.values()).sort((a, b) => a.id.localeCompare(b.id)).map(clone);
     },
+    async listEffectiveDefinitions() {
+      return Array.from(triggerDefinitions.values())
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((definition) => buildEffectiveManagedSchedule(definition, triggerDefinitionOverrides.get(definition.id) ?? null))
+        .map(clone);
+    },
     async upsertDefinition(input) {
       const timestamp = nowIso(input.now);
       const existing = triggerDefinitions.get(input.id);
       const definition: TriggerDefinition = {
         id: input.id,
         sourceType: input.sourceType,
+        definitionOrigin: input.definitionOrigin ?? existing?.definitionOrigin ?? "config",
         slug: input.slug ?? null,
         enabled: input.enabled,
         workspace: input.workspace,
         agentId: input.agentId,
+        label: input.label ?? existing?.label ?? input.id,
         promptTemplate: input.promptTemplate,
         deliveryTarget: clone(input.deliveryTarget),
         scheduleExpr: input.scheduleExpr ?? null,
@@ -490,6 +569,10 @@ export function createInMemoryRepositories(): RepositoryBundle {
         nextDueAt: input.nextDueAt ?? existing?.nextDueAt ?? null,
         lastTriggeredAt: input.lastTriggeredAt ?? existing?.lastTriggeredAt ?? null,
         lastTriggerStatus: input.lastTriggerStatus ?? existing?.lastTriggerStatus ?? null,
+        lastManagedAt: input.lastManagedAt ?? existing?.lastManagedAt ?? null,
+        lastManagedBySessionId: input.lastManagedBySessionId ?? existing?.lastManagedBySessionId ?? null,
+        lastManagedByChatId: input.lastManagedByChatId ?? existing?.lastManagedByChatId ?? null,
+        lastManagementAction: input.lastManagementAction ?? existing?.lastManagementAction ?? null,
         secretRef: input.secretRef ?? null,
         requiredFields: [...input.requiredFields],
         optionalFields: [...input.optionalFields],
@@ -519,6 +602,39 @@ export function createInMemoryRepositories(): RepositoryBundle {
       };
       triggerDefinitions.set(definitionId, updated);
       return clone(updated);
+    },
+  };
+
+  const triggerDefinitionOverrideRepository: TriggerDefinitionOverrideRepository = {
+    async getOverrideByDefinitionId(definitionId) {
+      return clone(triggerDefinitionOverrides.get(definitionId) ?? null);
+    },
+    async listOverrides() {
+      return Array.from(triggerDefinitionOverrides.values())
+        .sort((a, b) => a.definitionId.localeCompare(b.definitionId))
+        .map(clone);
+    },
+    async upsertOverride(input) {
+      const timestamp = nowIso(input.now);
+      const existing = triggerDefinitionOverrides.get(input.definitionId);
+      const override: TriggerDefinitionOverride = {
+        definitionId: input.definitionId,
+        workspace: input.workspace,
+        label: input.label ?? null,
+        enabled: input.enabled ?? null,
+        scheduleExpr: input.scheduleExpr ?? null,
+        timezone: input.timezone ?? null,
+        promptTemplate: input.promptTemplate ?? null,
+        deliveryTarget: input.deliveryTarget ? clone(input.deliveryTarget) : null,
+        managedBySessionId: input.managedBySessionId,
+        managedByChatId: input.managedByChatId,
+        managedByUserId: input.managedByUserId ?? null,
+        appliedAt: input.appliedAt,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      triggerDefinitionOverrides.set(input.definitionId, override);
+      return clone(override);
     },
   };
 
@@ -581,6 +697,40 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
   };
 
+  const scheduleManagementActionRepository: ScheduleManagementActionRepository = {
+    async createAction(input) {
+      const timestamp = nowIso(input.now);
+      const action: ScheduleManagementAction = {
+        id: randomUUID(),
+        sessionId: input.sessionId,
+        chatId: input.chatId,
+        workspace: input.workspace,
+        userId: input.userId ?? null,
+        requestedText: input.requestedText,
+        actionType: input.actionType,
+        resolutionStatus: input.resolutionStatus,
+        targetDefinitionId: input.targetDefinitionId ?? null,
+        reason: input.reason ?? null,
+        responseSummary: input.responseSummary ?? null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      scheduleManagementActions.set(action.id, action);
+      return clone(action);
+    },
+    async listActions() {
+      return Array.from(scheduleManagementActions.values())
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map(clone);
+    },
+    async listActionsByDefinition(definitionId) {
+      return Array.from(scheduleManagementActions.values())
+        .filter((action) => action.targetDefinitionId === definitionId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map(clone);
+    },
+  };
+
   const runRepository: RunRepository = {
     async createQueuedRun(input) {
       const run: Run = {
@@ -590,6 +740,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
         workspace: input.workspace,
         status: "queued",
         prompt: input.prompt,
+        managementMode: input.managementMode ?? "none",
         triggerSource: input.triggerSource ?? "chat_message",
         triggerExecutionId: input.triggerExecutionId ?? null,
         triggerMessageId: input.triggerMessageId,
@@ -896,7 +1047,9 @@ export function createInMemoryRepositories(): RepositoryBundle {
     sessionWorkspaceBindings: sessionWorkspaceBindingRepository,
     workspaceCatalog: workspaceCatalogRepository,
     triggerDefinitions: triggerDefinitionRepository,
+    triggerDefinitionOverrides: triggerDefinitionOverrideRepository,
     triggerExecutions: triggerExecutionRepository,
+    scheduleManagementActions: scheduleManagementActionRepository,
     runs: runRepository,
     events: eventRepository,
     deliveries: deliveryRepository,
@@ -912,11 +1065,17 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
   const selectWorkspaceCatalogSql =
     'SELECT workspace_key AS "workspaceKey", workspace_path AS "workspacePath", provision_source AS "provisionSource", template_ref AS "templateRef", created_at AS "createdAt", updated_at AS "updatedAt" FROM workspace_catalog';
   const selectTriggerDefinitionSql =
-    'SELECT id, source_type AS "sourceType", slug, enabled, workspace, agent_id AS "agentId", prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt" FROM trigger_definitions';
+    'SELECT id, source_type AS "sourceType", definition_origin AS "definitionOrigin", slug, enabled, workspace, agent_id AS "agentId", label, prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", last_managed_at AS "lastManagedAt", last_managed_by_session_id AS "lastManagedBySessionId", last_managed_by_chat_id AS "lastManagedByChatId", last_management_action AS "lastManagementAction", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt" FROM trigger_definitions';
+  const selectEffectiveManagedScheduleSql =
+    'SELECT d.id, d.id AS "definitionId", d.source_type AS "sourceType", d.definition_origin AS "definitionOrigin", d.slug, d.workspace, d.agent_id AS "agentId", COALESCE(o.label, d.label) AS label, COALESCE(o.enabled, d.enabled) AS enabled, COALESCE(o.prompt_template, d.prompt_template) AS "promptTemplate", COALESCE(o.delivery_target, d.delivery_target) AS "deliveryTarget", COALESCE(o.schedule_expr, d.schedule_expr) AS "scheduleExpr", COALESCE(o.timezone, d.timezone) AS timezone, d.next_due_at AS "nextDueAt", d.last_triggered_at AS "lastTriggeredAt", d.last_trigger_status AS "lastTriggerStatus", COALESCE(o.applied_at, d.last_managed_at) AS "lastManagedAt", COALESCE(o.managed_by_session_id, d.last_managed_by_session_id) AS "lastManagedBySessionId", COALESCE(o.managed_by_chat_id, d.last_managed_by_chat_id) AS "lastManagedByChatId", d.last_management_action AS "lastManagementAction", d.secret_ref AS "secretRef", d.required_fields AS "requiredFields", d.optional_fields AS "optionalFields", d.replay_window_seconds AS "replayWindowSeconds", (o.definition_id IS NOT NULL) AS overridden, d.created_at AS "createdAt", COALESCE(o.updated_at, d.updated_at) AS "updatedAt" FROM trigger_definitions d LEFT JOIN trigger_definition_overrides o ON o.definition_id = d.id';
+  const selectTriggerDefinitionOverrideSql =
+    'SELECT definition_id AS "definitionId", workspace, label, enabled, schedule_expr AS "scheduleExpr", timezone, prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", managed_by_session_id AS "managedBySessionId", managed_by_chat_id AS "managedByChatId", managed_by_user_id AS "managedByUserId", applied_at AS "appliedAt", created_at AS "createdAt", updated_at AS "updatedAt" FROM trigger_definition_overrides';
+  const selectScheduleManagementActionSql =
+    'SELECT id, session_id AS "sessionId", chat_id AS "chatId", workspace, user_id AS "userId", requested_text AS "requestedText", action_type AS "actionType", resolution_status AS "resolutionStatus", target_definition_id AS "targetDefinitionId", reason, response_summary AS "responseSummary", created_at AS "createdAt", updated_at AS "updatedAt" FROM schedule_management_actions';
   const selectTriggerExecutionSql =
     'SELECT id, definition_id AS "definitionId", source_type AS "sourceType", status, triggered_at AS "triggeredAt", input_digest AS "inputDigest", run_id AS "runId", delivery_status AS "deliveryStatus", rejection_reason AS "rejectionReason", failure_code AS "failureCode", failure_message AS "failureMessage", finished_at AS "finishedAt", created_at AS "createdAt", updated_at AS "updatedAt" FROM trigger_executions';
   const selectRunSql =
-    'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, trigger_source AS "triggerSource", trigger_execution_id AS "triggerExecutionId", trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", delivery_target AS "deliveryTarget", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
+    'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, management_mode AS "managementMode", trigger_source AS "triggerSource", trigger_execution_id AS "triggerExecutionId", trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", delivery_target AS "deliveryTarget", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
   const selectRunPresentationSql =
     'SELECT run_id AS "runId", session_id AS "sessionId", chat_id AS "chatId", phase, terminal_status AS "terminalStatus", streaming_message_id AS "streamingMessageId", streaming_card_id AS "streamingCardId", streaming_element_id AS "streamingElementId", COALESCE(fallback_terminal_message_id, final_post_message_id) AS "fallbackTerminalMessageId", degraded_reason AS "degradedReason", last_output_sequence AS "lastOutputSequence", last_output_excerpt AS "lastOutputExcerpt", created_at AS "createdAt", updated_at AS "updatedAt" FROM run_presentations';
   const selectOutboundDeliverySql =
@@ -1196,6 +1355,13 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       );
       return result.rows[0] ?? null;
     },
+    async getEffectiveDefinitionById(definitionId) {
+      const result = await client.query<EffectiveManagedSchedule>(
+        `${selectEffectiveManagedScheduleSql} WHERE d.id = $1 LIMIT 1`,
+        [definitionId],
+      );
+      return result.rows[0] ?? null;
+    },
     async getDefinitionBySlug(slug) {
       const result = await client.query<TriggerDefinition>(
         `${selectTriggerDefinitionSql} WHERE slug = $1 LIMIT 1`,
@@ -1207,24 +1373,32 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       const result = await client.query<TriggerDefinition>(`${selectTriggerDefinitionSql} ORDER BY id ASC`);
       return result.rows;
     },
+    async listEffectiveDefinitions() {
+      const result = await client.query<EffectiveManagedSchedule>(
+        `${selectEffectiveManagedScheduleSql} ORDER BY "definitionId" ASC`,
+      );
+      return result.rows;
+    },
     async upsertDefinition(input) {
       const timestamp = nowIso(input.now);
       const result = await client.query<TriggerDefinition>(
         `INSERT INTO trigger_definitions (
-          id, source_type, slug, enabled, workspace, agent_id, prompt_template, delivery_target,
-          schedule_expr, timezone, next_due_at, last_triggered_at, last_trigger_status, secret_ref,
+          id, source_type, definition_origin, slug, enabled, workspace, agent_id, label, prompt_template, delivery_target,
+          schedule_expr, timezone, next_due_at, last_triggered_at, last_trigger_status, last_managed_at, last_managed_by_session_id, last_managed_by_chat_id, last_management_action, secret_ref,
           required_fields, optional_fields, replay_window_seconds, definition_hash, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8::jsonb,
-          $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26
         )
         ON CONFLICT (id) DO UPDATE SET
           source_type = EXCLUDED.source_type,
+          definition_origin = EXCLUDED.definition_origin,
           slug = EXCLUDED.slug,
           enabled = EXCLUDED.enabled,
           workspace = EXCLUDED.workspace,
           agent_id = EXCLUDED.agent_id,
+          label = EXCLUDED.label,
           prompt_template = EXCLUDED.prompt_template,
           delivery_target = EXCLUDED.delivery_target,
           schedule_expr = EXCLUDED.schedule_expr,
@@ -1232,20 +1406,26 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           next_due_at = EXCLUDED.next_due_at,
           last_triggered_at = COALESCE(EXCLUDED.last_triggered_at, trigger_definitions.last_triggered_at),
           last_trigger_status = COALESCE(EXCLUDED.last_trigger_status, trigger_definitions.last_trigger_status),
+          last_managed_at = COALESCE(EXCLUDED.last_managed_at, trigger_definitions.last_managed_at),
+          last_managed_by_session_id = COALESCE(EXCLUDED.last_managed_by_session_id, trigger_definitions.last_managed_by_session_id),
+          last_managed_by_chat_id = COALESCE(EXCLUDED.last_managed_by_chat_id, trigger_definitions.last_managed_by_chat_id),
+          last_management_action = COALESCE(EXCLUDED.last_management_action, trigger_definitions.last_management_action),
           secret_ref = EXCLUDED.secret_ref,
           required_fields = EXCLUDED.required_fields,
           optional_fields = EXCLUDED.optional_fields,
           replay_window_seconds = EXCLUDED.replay_window_seconds,
           definition_hash = EXCLUDED.definition_hash,
           updated_at = EXCLUDED.updated_at
-        RETURNING id, source_type AS "sourceType", slug, enabled, workspace, agent_id AS "agentId", prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        RETURNING id, source_type AS "sourceType", definition_origin AS "definitionOrigin", slug, enabled, workspace, agent_id AS "agentId", label, prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", last_managed_at AS "lastManagedAt", last_managed_by_session_id AS "lastManagedBySessionId", last_managed_by_chat_id AS "lastManagedByChatId", last_management_action AS "lastManagementAction", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [
           input.id,
           input.sourceType,
+          input.definitionOrigin,
           input.slug,
           input.enabled,
           input.workspace,
           input.agentId,
+          input.label,
           input.promptTemplate,
           JSON.stringify(input.deliveryTarget),
           input.scheduleExpr ?? null,
@@ -1253,6 +1433,10 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           input.nextDueAt ?? null,
           input.lastTriggeredAt ?? null,
           input.lastTriggerStatus ?? null,
+          input.lastManagedAt ?? null,
+          input.lastManagedBySessionId ?? null,
+          input.lastManagedByChatId ?? null,
+          input.lastManagementAction ?? null,
           input.secretRef ?? null,
           input.requiredFields,
           input.optionalFields,
@@ -1289,7 +1473,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       params.push(definitionId);
 
       const result = await client.query<TriggerDefinition>(
-        `UPDATE trigger_definitions SET ${updates.join(", ")} WHERE id = $${params.length} RETURNING id, source_type AS "sourceType", slug, enabled, workspace, agent_id AS "agentId", prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        `UPDATE trigger_definitions SET ${updates.join(", ")} WHERE id = $${params.length} RETURNING id, source_type AS "sourceType", definition_origin AS "definitionOrigin", slug, enabled, workspace, agent_id AS "agentId", label, prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", schedule_expr AS "scheduleExpr", timezone, next_due_at AS "nextDueAt", last_triggered_at AS "lastTriggeredAt", last_trigger_status AS "lastTriggerStatus", last_managed_at AS "lastManagedAt", last_managed_by_session_id AS "lastManagedBySessionId", last_managed_by_chat_id AS "lastManagedByChatId", last_management_action AS "lastManagementAction", secret_ref AS "secretRef", required_fields AS "requiredFields", optional_fields AS "optionalFields", replay_window_seconds AS "replayWindowSeconds", definition_hash AS "definitionHash", created_at AS "createdAt", updated_at AS "updatedAt"`,
         params,
       );
       const definition = result.rows[0];
@@ -1297,6 +1481,108 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         throw new Error(`trigger definition not found: ${definitionId}`);
       }
       return definition;
+    },
+  };
+
+  const triggerDefinitionOverrides: TriggerDefinitionOverrideRepository = {
+    async getOverrideByDefinitionId(definitionId) {
+      const result = await client.query<TriggerDefinitionOverride>(
+        `${selectTriggerDefinitionOverrideSql} WHERE definition_id = $1 LIMIT 1`,
+        [definitionId],
+      );
+      return result.rows[0] ?? null;
+    },
+    async listOverrides() {
+      const result = await client.query<TriggerDefinitionOverride>(
+        `${selectTriggerDefinitionOverrideSql} ORDER BY definition_id ASC`,
+      );
+      return result.rows;
+    },
+    async upsertOverride(input) {
+      const timestamp = nowIso(input.now);
+      const result = await client.query<TriggerDefinitionOverride>(
+        `INSERT INTO trigger_definition_overrides (
+          definition_id, workspace, label, enabled, schedule_expr, timezone, prompt_template, delivery_target,
+          managed_by_session_id, managed_by_chat_id, managed_by_user_id, applied_at, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8::jsonb,
+          $9, $10, $11, $12, $13, $14
+        )
+        ON CONFLICT (definition_id) DO UPDATE SET
+          workspace = EXCLUDED.workspace,
+          label = EXCLUDED.label,
+          enabled = EXCLUDED.enabled,
+          schedule_expr = EXCLUDED.schedule_expr,
+          timezone = EXCLUDED.timezone,
+          prompt_template = EXCLUDED.prompt_template,
+          delivery_target = EXCLUDED.delivery_target,
+          managed_by_session_id = EXCLUDED.managed_by_session_id,
+          managed_by_chat_id = EXCLUDED.managed_by_chat_id,
+          managed_by_user_id = EXCLUDED.managed_by_user_id,
+          applied_at = EXCLUDED.applied_at,
+          updated_at = EXCLUDED.updated_at
+        RETURNING definition_id AS "definitionId", workspace, label, enabled, schedule_expr AS "scheduleExpr", timezone, prompt_template AS "promptTemplate", delivery_target AS "deliveryTarget", managed_by_session_id AS "managedBySessionId", managed_by_chat_id AS "managedByChatId", managed_by_user_id AS "managedByUserId", applied_at AS "appliedAt", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          input.definitionId,
+          input.workspace,
+          input.label ?? null,
+          input.enabled ?? null,
+          input.scheduleExpr ?? null,
+          input.timezone ?? null,
+          input.promptTemplate ?? null,
+          input.deliveryTarget ? JSON.stringify(input.deliveryTarget) : null,
+          input.managedBySessionId,
+          input.managedByChatId,
+          input.managedByUserId ?? null,
+          input.appliedAt,
+          timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0]!;
+    },
+  };
+
+  const scheduleManagementActions: ScheduleManagementActionRepository = {
+    async createAction(input) {
+      const timestamp = nowIso(input.now);
+      const result = await client.query<ScheduleManagementAction>(
+        `INSERT INTO schedule_management_actions (
+          id, session_id, chat_id, workspace, user_id, requested_text, action_type, resolution_status, target_definition_id, reason, response_summary, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+        )
+        RETURNING id, session_id AS "sessionId", chat_id AS "chatId", workspace, user_id AS "userId", requested_text AS "requestedText", action_type AS "actionType", resolution_status AS "resolutionStatus", target_definition_id AS "targetDefinitionId", reason, response_summary AS "responseSummary", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          randomUUID(),
+          input.sessionId,
+          input.chatId,
+          input.workspace,
+          input.userId ?? null,
+          input.requestedText,
+          input.actionType,
+          input.resolutionStatus,
+          input.targetDefinitionId ?? null,
+          input.reason ?? null,
+          input.responseSummary ?? null,
+          timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0]!;
+    },
+    async listActions() {
+      const result = await client.query<ScheduleManagementAction>(
+        `${selectScheduleManagementActionSql} ORDER BY created_at ASC`,
+      );
+      return result.rows;
+    },
+    async listActionsByDefinition(definitionId) {
+      const result = await client.query<ScheduleManagementAction>(
+        `${selectScheduleManagementActionSql} WHERE target_definition_id = $1 ORDER BY created_at ASC`,
+        [definitionId],
+      );
+      return result.rows;
     },
   };
 
@@ -1413,6 +1699,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         workspace: input.workspace,
         status: "queued",
         prompt: input.prompt,
+        managementMode: input.managementMode ?? "none",
         triggerSource: input.triggerSource ?? "chat_message",
         triggerExecutionId: input.triggerExecutionId ?? null,
         triggerMessageId: input.triggerMessageId,
@@ -1433,7 +1720,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         createdAt: nowIso(input.now),
       };
       await client.query(
-        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, trigger_source, trigger_execution_id, trigger_message_id, trigger_user_id, timeout_seconds, requested_session_mode, requested_bridge_session_id, resolved_bridge_session_id, session_recovery_attempted, session_recovery_result, delivery_target, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19)",
+        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, management_mode, trigger_source, trigger_execution_id, trigger_message_id, trigger_user_id, timeout_seconds, requested_session_mode, requested_bridge_session_id, resolved_bridge_session_id, session_recovery_attempted, session_recovery_result, delivery_target, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20)",
         [
           run.id,
           run.sessionId,
@@ -1441,6 +1728,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           run.workspace,
           run.status,
           run.prompt,
+          run.managementMode,
           run.triggerSource,
           run.triggerExecutionId,
           run.triggerMessageId,
@@ -1753,7 +2041,9 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     sessionWorkspaceBindings,
     workspaceCatalog,
     triggerDefinitions,
+    triggerDefinitionOverrides,
     triggerExecutions,
+    scheduleManagementActions,
     runs,
     events,
     deliveries,

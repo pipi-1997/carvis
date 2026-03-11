@@ -9,6 +9,7 @@ import {
   createInMemoryRepositories,
   createRuntimeLogger,
 } from "@carvis/core";
+import { CodexBridge, createScriptedCodexTransport } from "@carvis/bridge-codex";
 import { createFeishuWebsocketTestTransport } from "@carvis/channel-feishu";
 
 import { startGateway } from "../../apps/gateway/src/index.ts";
@@ -31,6 +32,7 @@ describe("local runtime failure modes", () => {
 
     const gateway = await startGateway({
       createRuntimeServices: async () => gatewayServices,
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       serve: (options) => ({
         port: Number(options.port),
         stop() {},
@@ -41,6 +43,7 @@ describe("local runtime failure modes", () => {
 
     const executor = await runExecutor({
       autoStartLoop: false,
+      createBridge: () => createBridge(),
       createRuntimeServices: async () => executorServices,
     });
     cleanupCallbacks.push(executor.stop);
@@ -135,4 +138,15 @@ function createRuntimeServicesFixture(workspace: string, runtimeStore: Map<strin
 
 function createRuntimeStore() {
   return new Map<string, string>();
+}
+
+function createBridge() {
+  return new CodexBridge({
+    transport: createScriptedCodexTransport([
+      {
+        type: "result",
+        resultSummary: "runtime ready",
+      },
+    ]),
+  });
 }

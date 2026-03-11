@@ -15,6 +15,7 @@ import { handleHelpCommand } from "../commands/help.ts";
 import { handleNewCommand } from "../commands/new.ts";
 import { handleStatusCommand } from "../commands/status.ts";
 import { resolveRequestedSession } from "../services/continuation-binding.ts";
+import { createScheduleManagementPromptBuilder } from "../services/schedule-management-prompt.ts";
 import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
 import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
 
@@ -46,6 +47,7 @@ export function createFeishuWebhookHandler(input: {
     workspaceResolverConfig: input.workspaceResolverConfig,
     workspaceProvisioner,
   });
+  const scheduleManagementPromptBuilder = createScheduleManagementPromptBuilder();
 
   return async function handle(rawBody: string, headers: Record<string, string | undefined>) {
     const verified = await input.adapter.verifyWebhook({
@@ -255,12 +257,17 @@ export function createFeishuWebhookHandler(input: {
       binding,
       workspace: resolvedWorkspace.workspacePath,
     });
+    const prompt = scheduleManagementPromptBuilder.build({
+      workspace: resolvedWorkspace.workspacePath,
+      userPrompt: envelope.prompt,
+    });
     const activeRun = await input.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
     const run = await input.repositories.runs.createQueuedRun({
       sessionId: session.id,
       agentId: input.agentConfig.id,
       workspace: resolvedWorkspace.workspacePath,
-      prompt: envelope.prompt,
+      prompt,
+      managementMode: "none",
       triggerMessageId: envelope.messageId,
       triggerUserId: envelope.userId,
       timeoutSeconds: input.agentConfig.timeoutSeconds,
