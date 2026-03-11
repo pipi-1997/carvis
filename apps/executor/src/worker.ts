@@ -4,6 +4,7 @@ import type {
   HeartbeatDriver,
   QueueDriver,
   RepositoryBundle,
+  Run,
   WorkspaceLockDriver,
 } from "@carvis/core";
 import type { CodexBridge } from "@carvis/bridge-codex";
@@ -19,6 +20,14 @@ export function createExecutorWorker(input: {
   cancelSignals: CancelSignalDriver;
   heartbeats: HeartbeatDriver;
   bridge: CodexBridge;
+  toolInvoker?: {
+    execute(input: {
+      run: Run;
+      session: { chatId: string; id: string } | null;
+      toolName: string;
+      arguments: Record<string, unknown>;
+    }): Promise<Record<string, unknown>>;
+  };
   logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   notifier: {
     notifyRunEvent(session: { chatId: string }, event: { eventType: string; payload: Record<string, unknown>; runId: string }): Promise<void>;
@@ -31,6 +40,7 @@ export function createExecutorWorker(input: {
     cancelSignals: input.cancelSignals,
     heartbeats: input.heartbeats,
     bridge: input.bridge,
+    toolInvoker: input.toolInvoker,
     logger: input.logger,
     notifier: input.notifier,
     now: input.now,

@@ -21,6 +21,7 @@ import { createPresentationOrchestrator } from "./services/presentation-orchestr
 import { createRunNotifier } from "./services/run-notifier.ts";
 import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
+import { createScheduleManagementPromptBuilder } from "./services/schedule-management-prompt.ts";
 import { createSchedulerLoop } from "./services/scheduler-loop.ts";
 import { resolveRequestedSession } from "./services/continuation-binding.ts";
 import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
@@ -187,6 +188,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     workspaceResolverConfig: services.config.workspaceResolver,
     workspaceProvisioner,
   });
+  const scheduleManagementPromptBuilder = createScheduleManagementPromptBuilder();
   const app = createGatewayApp({
     agentConfig: services.config.agent,
     adapter,
@@ -351,12 +353,17 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         binding,
         workspace: resolvedWorkspace.workspacePath,
       });
+      const prompt = scheduleManagementPromptBuilder.build({
+        workspace: resolvedWorkspace.workspacePath,
+        userPrompt: envelope.prompt,
+      });
       const activeRun = await services.repositories.runs.findActiveRunByWorkspace(resolvedWorkspace.workspacePath);
       const run = await services.repositories.runs.createQueuedRun({
         sessionId: session.id,
         agentId: services.config.agent.id,
         workspace: resolvedWorkspace.workspacePath,
-        prompt: envelope.prompt,
+        prompt,
+        managementMode: "none",
         triggerMessageId: envelope.messageId,
         triggerUserId: envelope.userId,
         timeoutSeconds: services.config.agent.timeoutSeconds,

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createHarness } from "../support/harness.ts";
 
 describe("scheduler trigger integration", () => {
-  test("due scheduled job 自动入队并在完成后投递终态消息", async () => {
+  test("due scheduled job 自动入队并在完成后切换飞书卡片", async () => {
     const harness = createHarness({
       triggerConfig: {
         scheduledJobs: [
@@ -56,9 +56,22 @@ describe("scheduler trigger integration", () => {
       lastTriggerStatus: "completed",
       nextDueAt: "2026-03-09T00:01:00.000Z",
     });
-    expect(harness.sentMessages.at(-1)).toMatchObject({
+    const presentation = await harness.repositories.presentations.getPresentationByRunId(queuedRun?.id ?? "");
+    expect(presentation).toMatchObject({
       chatId: "ops-chat",
-      kind: "result",
+      phase: "completed",
     });
+    expect(harness.presentationOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "create-card", runId: queuedRun?.id, chatId: "ops-chat" }),
+        expect.objectContaining({ action: "complete-card", runId: queuedRun?.id, status: "completed" }),
+      ]),
+    );
+    expect(
+      (await harness.repositories.deliveries.listDeliveries())
+        .filter((delivery) => delivery.runId === queuedRun?.id)
+        .every((delivery) => delivery.triggerExecutionId === execution?.id),
+    ).toBe(true);
+    expect(harness.sentMessages.some((message) => message.kind === "result")).toBe(false);
   });
 });

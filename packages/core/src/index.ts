@@ -1,5 +1,6 @@
 export * from "./config/agent-config.ts";
 export * from "./config/runtime-config.ts";
+export * from "./config/schedule-management-ipc.ts";
 export * from "./domain/index.ts";
 export * from "./observability/logger.ts";
 export * from "./observability/runtime-logger.ts";

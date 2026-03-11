@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
-import { createPostgresRepositories } from "@carvis/core";
 import type {
   ConversationSessionBinding,
+  EffectiveManagedSchedule,
   RunPresentation,
+  ScheduleManagementAction,
   Session,
   SessionWorkspaceBinding,
   TriggerDefinition,
+  TriggerDefinitionOverride,
   TriggerExecution,
   WorkspaceCatalogEntry,
 } from "@carvis/core";
+import { createPostgresRepositories } from "../../packages/core/src/storage/repositories.ts";
 
 describe("postgres repositories", () => {
   test("getSessionById 将 sessions 字段映射为领域模型的 camelCase", async () => {
@@ -322,6 +325,203 @@ describe("postgres repositories", () => {
       "2026-03-09T00:00:00.000Z",
       "2026-03-09T00:00:00.000Z",
     ]);
+  });
+
+  test("getEffectiveDefinitionById 会返回 baseline 与 override 合并后的字段", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              id: "daily-ops-report",
+              definitionId: "daily-ops-report",
+              sourceType: "scheduled_job",
+              definitionOrigin: "config",
+              slug: null,
+              workspace: "/tmp/managed/ops",
+              agentId: "codex-main",
+              label: "日报-已调整",
+              enabled: true,
+              promptTemplate: "新模板",
+              deliveryTarget: { kind: "none" },
+              scheduleExpr: "0 10 * * *",
+              timezone: "Asia/Shanghai",
+              nextDueAt: "2026-03-10T02:00:00.000Z",
+              lastTriggeredAt: null,
+              lastTriggerStatus: null,
+              lastManagedAt: "2026-03-10T01:00:00.000Z",
+              lastManagedBySessionId: "session-001",
+              lastManagedByChatId: "chat-001",
+              lastManagementAction: "update",
+              secretRef: null,
+              requiredFields: [],
+              optionalFields: [],
+              replayWindowSeconds: null,
+              overridden: true,
+              createdAt: "2026-03-09T00:00:00.000Z",
+              updatedAt: "2026-03-10T01:00:00.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const definition = await repositories.triggerDefinitions.getEffectiveDefinitionById("daily-ops-report");
+
+    expect(definition).toEqual({
+      id: "daily-ops-report",
+      definitionId: "daily-ops-report",
+      sourceType: "scheduled_job",
+      definitionOrigin: "config",
+      slug: null,
+      workspace: "/tmp/managed/ops",
+      agentId: "codex-main",
+      label: "日报-已调整",
+      enabled: true,
+      promptTemplate: "新模板",
+      deliveryTarget: { kind: "none" },
+      scheduleExpr: "0 10 * * *",
+      timezone: "Asia/Shanghai",
+      nextDueAt: "2026-03-10T02:00:00.000Z",
+      lastTriggeredAt: null,
+      lastTriggerStatus: null,
+      lastManagedAt: "2026-03-10T01:00:00.000Z",
+      lastManagedBySessionId: "session-001",
+      lastManagedByChatId: "chat-001",
+      lastManagementAction: "update",
+      secretRef: null,
+      requiredFields: [],
+      optionalFields: [],
+      replayWindowSeconds: null,
+      overridden: true,
+      createdAt: "2026-03-09T00:00:00.000Z",
+      updatedAt: "2026-03-10T01:00:00.000Z",
+    } satisfies EffectiveManagedSchedule);
+    expect(queries[0]?.sql).toContain('definition_origin AS "definitionOrigin"');
+  });
+
+  test("upsertOverride 会写入 trigger_definition_overrides 所需字段", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              definitionId: "daily-ops-report",
+              workspace: "/tmp/managed/ops",
+              label: "日报-已调整",
+              enabled: true,
+              scheduleExpr: "0 10 * * *",
+              timezone: "Asia/Shanghai",
+              promptTemplate: "新模板",
+              deliveryTarget: { kind: "none" },
+              managedBySessionId: "session-001",
+              managedByChatId: "chat-001",
+              managedByUserId: "user-001",
+              appliedAt: "2026-03-10T01:00:00.000Z",
+              createdAt: "2026-03-10T01:00:00.000Z",
+              updatedAt: "2026-03-10T01:00:00.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const override = await repositories.triggerDefinitionOverrides.upsertOverride({
+      definitionId: "daily-ops-report",
+      workspace: "/tmp/managed/ops",
+      label: "日报-已调整",
+      enabled: true,
+      scheduleExpr: "0 10 * * *",
+      timezone: "Asia/Shanghai",
+      promptTemplate: "新模板",
+      deliveryTarget: { kind: "none" },
+      managedBySessionId: "session-001",
+      managedByChatId: "chat-001",
+      managedByUserId: "user-001",
+      appliedAt: "2026-03-10T01:00:00.000Z",
+      now: new Date("2026-03-10T01:00:00.000Z"),
+    });
+
+    expect(override).toEqual({
+      definitionId: "daily-ops-report",
+      workspace: "/tmp/managed/ops",
+      label: "日报-已调整",
+      enabled: true,
+      scheduleExpr: "0 10 * * *",
+      timezone: "Asia/Shanghai",
+      promptTemplate: "新模板",
+      deliveryTarget: { kind: "none" },
+      managedBySessionId: "session-001",
+      managedByChatId: "chat-001",
+      managedByUserId: "user-001",
+      appliedAt: "2026-03-10T01:00:00.000Z",
+      createdAt: "2026-03-10T01:00:00.000Z",
+      updatedAt: "2026-03-10T01:00:00.000Z",
+    } satisfies TriggerDefinitionOverride);
+    expect(queries[0]?.sql).toContain("INSERT INTO trigger_definition_overrides");
+  });
+
+  test("createAction 会写入 schedule_management_actions 所需字段", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              id: "action-001",
+              sessionId: "session-001",
+              chatId: "chat-001",
+              workspace: "/tmp/managed/ops",
+              userId: "user-001",
+              requestedText: "把日报改到 10 点",
+              actionType: "update",
+              resolutionStatus: "executed",
+              targetDefinitionId: "daily-ops-report",
+              reason: null,
+              responseSummary: "已更新日报",
+              createdAt: "2026-03-10T01:00:00.000Z",
+              updatedAt: "2026-03-10T01:00:00.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const action = await repositories.scheduleManagementActions.createAction({
+      sessionId: "session-001",
+      chatId: "chat-001",
+      workspace: "/tmp/managed/ops",
+      userId: "user-001",
+      requestedText: "把日报改到 10 点",
+      actionType: "update",
+      resolutionStatus: "executed",
+      targetDefinitionId: "daily-ops-report",
+      reason: null,
+      responseSummary: "已更新日报",
+      now: new Date("2026-03-10T01:00:00.000Z"),
+    });
+
+    expect(action).toEqual({
+      id: "action-001",
+      sessionId: "session-001",
+      chatId: "chat-001",
+      workspace: "/tmp/managed/ops",
+      userId: "user-001",
+      requestedText: "把日报改到 10 点",
+      actionType: "update",
+      resolutionStatus: "executed",
+      targetDefinitionId: "daily-ops-report",
+      reason: null,
+      responseSummary: "已更新日报",
+      createdAt: "2026-03-10T01:00:00.000Z",
+      updatedAt: "2026-03-10T01:00:00.000Z",
+    } satisfies ScheduleManagementAction);
+    expect(queries[0]?.sql).toContain("INSERT INTO schedule_management_actions");
   });
 
   test("createQueuedRun 支持 sessionless trigger run 与 delivery target", async () => {

@@ -1,10 +1,15 @@
+import { resolveScheduleManagementSocketPath } from "@carvis/core";
+
 import { createGatewayApp } from "./app.ts";
 import { bootstrapGatewayRuntime, type BootstrapGatewayRuntimeOptions } from "./bootstrap.ts";
+import { startScheduleManagementIpcServer } from "./services/schedule-management-ipc-server.ts";
+import { ensureScheduleManagementIpcIgnored } from "./services/schedule-management-ipc-runtime.ts";
 
 type StartGatewayOptions = {
   createFeishuIngress?: BootstrapGatewayRuntimeOptions["createFeishuIngress"];
   createRunReaper?: BootstrapGatewayRuntimeOptions["createRunReaper"];
   createRuntimeServices?: BootstrapGatewayRuntimeOptions["createRuntimeServices"];
+  createScheduleManagementIpcServer?: typeof startScheduleManagementIpcServer;
   clearIntervalFn?: (timer: Timer) => void;
   env?: Record<string, string | undefined>;
   reaperIntervalMs?: number;
@@ -38,6 +43,34 @@ export async function startGateway(options: StartGatewayOptions = {}) {
   await runtime.ingress.start();
   await runtime.publishFingerprint();
 
+  const ipcServerFactory = options.createScheduleManagementIpcServer ?? startScheduleManagementIpcServer;
+  const ipcServers = new Map<string, Awaited<ReturnType<typeof ipcServerFactory>>>();
+  async function reconcileIpcWorkers() {
+    const dynamicWorkspacePaths = (await runtime.services.repositories.workspaceCatalog.listEntries()).map((entry) => entry.workspacePath);
+    const targetWorkspacePaths = [
+      ...new Set([
+        ...Object.values(runtime.services.config.workspaceResolver.registry),
+        ...dynamicWorkspacePaths,
+      ]),
+    ];
+
+    for (const workspacePath of targetWorkspacePaths) {
+      if (ipcServers.has(workspacePath)) {
+        continue;
+      }
+      await ensureScheduleManagementIpcIgnored(workspacePath);
+      const server = await ipcServerFactory({
+        app: runtime.app,
+        socketPath: resolveScheduleManagementSocketPath({
+          ...options.env,
+          CARVIS_WORKSPACE: workspacePath,
+        }),
+      });
+      ipcServers.set(workspacePath, server);
+    }
+  }
+  await reconcileIpcWorkers();
+
   const serveImpl = options.serve ?? ((input) => Bun.serve(input));
   const server = serveImpl({
     fetch: runtime.app.fetch,
@@ -52,6 +85,7 @@ export async function startGateway(options: StartGatewayOptions = {}) {
   );
   const schedulerTimer = setIntervalImpl(
     async () => {
+      await reconcileIpcWorkers();
       await runtime.scheduler.runOnce();
     },
     options.schedulerIntervalMs ?? 1_000,
@@ -76,6 +110,9 @@ export async function startGateway(options: StartGatewayOptions = {}) {
     async stop() {
       clearIntervalImpl(reaperTimer);
       clearIntervalImpl(schedulerTimer);
+      for (const ipcServer of ipcServers.values()) {
+        await ipcServer.stop();
+      }
       await runtime.stop();
       await server.stop?.();
     },

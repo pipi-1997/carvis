@@ -63,10 +63,13 @@ describe("external webhook integration", () => {
       status: "completed",
       deliveryStatus: "sent",
     });
-    expect(harness.sentMessages.at(-1)).toMatchObject({
-      chatId: "ops-chat",
-      kind: "result",
-    });
+    expect(harness.presentationOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "create-card", chatId: "ops-chat", runId: queuedRun?.id }),
+        expect.objectContaining({ action: "complete-card", runId: queuedRun?.id, status: "completed" }),
+      ]),
+    );
+    expect(harness.sentMessages.at(-1)).toBeUndefined();
   });
 
   test("payload 只能注入允许字段，不能覆盖 definition 绑定 workspace", async () => {

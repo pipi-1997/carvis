@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { createRuntimeLogger } from "@carvis/core";
+import { createRuntimeLogger, resolveScheduleManagementSocketPath } from "@carvis/core";
 
 import { startGateway } from "../../apps/gateway/src/index.ts";
 import { createHarness } from "../support/harness.ts";
@@ -40,6 +40,7 @@ describe("gateway startup", () => {
     const started = await startGateway({
       env: harness.env,
       createRuntimeServices: async () => createGatewayRuntimeServicesFixture({ logger }),
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       createFeishuIngress: async () =>
         createGatewayIngressFixture({
           ready: true,
@@ -76,6 +77,43 @@ describe("gateway startup", () => {
     );
   });
 
+  test("启动后会配置 schedule management IPC socket 路径", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+    let configuredSocketPath: string | null | undefined;
+    let stopped = false;
+    const runtimeServices = createGatewayRuntimeServicesFixture({ logger: createRuntimeLogger() });
+
+    const started = await startGateway({
+      env: harness.env,
+      createRuntimeServices: async () => runtimeServices,
+      createScheduleManagementIpcServer: async (input) => {
+        configuredSocketPath = input.socketPath;
+        return {
+          socketPath: input.socketPath,
+          async stop() {
+            stopped = true;
+          },
+        };
+      },
+      createFeishuIngress: async () =>
+        createGatewayIngressFixture({
+          ready: true,
+        }),
+      serve: (options) => ({
+        port: Number(options.port),
+        stop() {},
+      }),
+    });
+
+    expect(configuredSocketPath).toBe(resolveScheduleManagementSocketPath({
+      ...harness.env,
+      CARVIS_WORKSPACE: runtimeServices.config.workspaceResolver.registry.main,
+    }));
+    await started.stop();
+    expect(stopped).toBe(true);
+  });
+
   test("runtime bootstrap 下 webhook allowlist 继承 feishu.allowFrom 配置", async () => {
     const harness = await createRuntimeHarness();
     cleanupCallbacks.push(harness.cleanup);
@@ -88,6 +126,7 @@ describe("gateway startup", () => {
           allowFrom: ["chat-allowed"],
           logger,
         }),
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       createFeishuIngress: async () =>
         createGatewayIngressFixture({
           ready: true,
@@ -128,6 +167,7 @@ describe("gateway startup", () => {
         createGatewayRuntimeServicesFixture({
           logger: createRuntimeLogger(),
         }),
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       createFeishuIngress: async () =>
         createGatewayIngressFixture({
           ready: true,
@@ -158,6 +198,67 @@ describe("gateway startup", () => {
     expect(reaped).toBe(1);
   });
 
+  test("scheduler tick 会为新创建的 workspace catalog entry 补齐 IPC worker", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+
+    const scheduledTimers: Array<{
+      callback: () => Promise<void>;
+      ms: number;
+    }> = [];
+    const startedSocketPaths: string[] = [];
+    const runtimeServices = createGatewayRuntimeServicesFixture({
+      logger: createRuntimeLogger(),
+    });
+
+    const started = await startGateway({
+      env: harness.env,
+      createRuntimeServices: async () => runtimeServices,
+      createScheduleManagementIpcServer: async (input) => {
+        startedSocketPaths.push(input.socketPath);
+        return {
+          socketPath: input.socketPath,
+          async stop() {},
+        };
+      },
+      createFeishuIngress: async () =>
+        createGatewayIngressFixture({
+          ready: true,
+        }),
+      serve: (options) => ({
+        port: Number(options.port),
+        stop() {},
+      }),
+      setIntervalFn: (callback, ms) => {
+        scheduledTimers.push({
+          callback: async () => {
+            await callback();
+          },
+          ms: Number(ms),
+        });
+        return 1 as unknown as Timer;
+      },
+    });
+    cleanupCallbacks.push(started.stop);
+
+    expect(startedSocketPaths).toHaveLength(1);
+
+    await runtimeServices.repositories.workspaceCatalog.createEntry({
+      workspaceKey: "feature-a",
+      workspacePath: "/tmp/carvis-workspace-feature-a",
+      provisionSource: "template_created",
+    });
+
+    await scheduledTimers[1]?.callback();
+
+    expect(startedSocketPaths).toContain(
+      resolveScheduleManagementSocketPath({
+        ...harness.env,
+        CARVIS_WORKSPACE: "/tmp/carvis-workspace-feature-a",
+      }),
+    );
+  });
+
   test("websocket 掉线后 healthz 降级", async () => {
     const harness = await createRuntimeHarness();
     cleanupCallbacks.push(harness.cleanup);
@@ -171,6 +272,7 @@ describe("gateway startup", () => {
         createGatewayRuntimeServicesFixture({
           logger: createRuntimeLogger(),
         }),
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       createFeishuIngress: async (options) => {
         onConnectionStateChange = options.onConnectionStateChange;
         return createGatewayIngressFixture({

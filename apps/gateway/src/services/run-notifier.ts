@@ -4,7 +4,7 @@ import type { FeishuAdapter } from "@carvis/channel-feishu";
 const WORKING_REACTION_EMOJI = "OK";
 
 type PresentationOrchestrator = {
-  handleRunQueued(input: { runId: string; sessionId: string; chatId: string }): Promise<unknown>;
+  handleRunQueued(input: { runId: string; sessionId: string | null; chatId: string }): Promise<unknown>;
   handleRunStarted(input: { runId: string; chatId: string; title: string }): Promise<unknown>;
   handleOutputDelta(input: { runId: string; sequence: number; text: string }): Promise<unknown>;
   handleTerminalEvent(input: { runId: string; terminalEvent: Pick<RunEvent, "eventType" | "payload"> }): Promise<unknown>;
@@ -61,9 +61,11 @@ export function createRunNotifier(input: {
   async function notifyRunEvent(session: Session | { chatId: string } | null, event: RunEvent) {
     const run = await input.repositories.runs.getRunById(event.runId);
     const isChatTriggered = run?.triggerSource === "chat_message" && !!run.sessionId;
+    const hasFeishuDeliveryTarget = run?.deliveryTarget?.kind === "feishu_chat" && !!run.deliveryTarget.chatId;
     const persistedSession =
       !session && run?.sessionId ? await input.repositories.sessions.getSessionById(run.sessionId) : null;
     const chatId = session?.chatId || persistedSession?.chatId || null;
+    const presentationChatId = hasFeishuDeliveryTarget ? run?.deliveryTarget?.chatId ?? null : chatId;
 
     if (event.eventType === "run.queued") {
       if (isChatTriggered && run?.triggerMessageId) {
@@ -77,15 +79,21 @@ export function createRunNotifier(input: {
           sessionId: presentationSession.id,
           chatId: presentationSession.chatId,
         });
+      } else if (hasFeishuDeliveryTarget && presentationChatId) {
+        await input.presentationOrchestrator?.handleRunQueued({
+          runId: event.runId,
+          sessionId: null,
+          chatId: presentationChatId,
+        });
       }
       return;
     }
 
     if (event.eventType === "run.started") {
-      if (isChatTriggered && chatId) {
+      if ((isChatTriggered && chatId) || (hasFeishuDeliveryTarget && presentationChatId)) {
         await input.presentationOrchestrator?.handleRunStarted({
           runId: event.runId,
-          chatId,
+          chatId: presentationChatId ?? chatId ?? "",
           title: "运行中",
         });
       }
@@ -93,7 +101,7 @@ export function createRunNotifier(input: {
     }
 
     if (event.eventType === "agent.output.delta") {
-      if (isChatTriggered) {
+      if (isChatTriggered || hasFeishuDeliveryTarget) {
         await input.presentationOrchestrator?.handleOutputDelta({
           runId: event.runId,
           sequence: Number(event.payload.sequence ?? 0),
@@ -111,7 +119,7 @@ export function createRunNotifier(input: {
       await input.adapter.removeReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
     }
 
-    if (isChatTriggered && input.presentationOrchestrator) {
+    if ((isChatTriggered || hasFeishuDeliveryTarget) && input.presentationOrchestrator) {
       await input.presentationOrchestrator.handleTerminalEvent({
         runId: event.runId,
         terminalEvent: {
@@ -169,6 +177,20 @@ function formatRunEventMessage(chatId: string, event: RunEvent): OutboundMessage
         kind: "status",
         content: String(event.payload.delta_text ?? ""),
       };
+    case "agent.tool_call":
+      return {
+        chatId,
+        runId: event.runId,
+        kind: "status",
+        content: `正在执行工具 ${String(event.payload.tool_name ?? "unknown")}`,
+      };
+    case "agent.tool_result":
+      return {
+        chatId,
+        runId: event.runId,
+        kind: "status",
+        content: String((event.payload.result as { summary?: string } | undefined)?.summary ?? "工具执行完成"),
+      };
     case "run.completed":
       return {
         chatId,
@@ -189,6 +211,13 @@ function formatRunEventMessage(chatId: string, event: RunEvent): OutboundMessage
         runId: event.runId,
         kind: "status",
         content: "已取消",
+      };
+    default:
+      return {
+        chatId,
+        runId: event.runId,
+        kind: "status",
+        content: "",
       };
   }
 }

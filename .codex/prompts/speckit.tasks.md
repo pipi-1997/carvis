@@ -40,6 +40,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - If contracts/ exists: Map interface contracts to user stories
    - If research.md exists: Extract decisions for setup tasks
    - Generate tasks organized by user story (see Task Generation Rules below)
+   - For Carvis features involving agent `tool` / `MCP` / skill capabilities, generate tasks around agent-owned capability exposure, policy/prompt shaping, gateway validation, and verification; do not generate gateway-side intent-detector tasks unless the spec explicitly requires them
    - Include constitution-mandated contract, integration, observability, and runbook tasks whenever a story affects governed seams
    - Generate dependency graph showing user story completion order
    - Create parallel execution examples per user story

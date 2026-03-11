@@ -152,4 +152,62 @@ describe("CodexBridge", () => {
       session_invalid: true,
     });
   });
+
+  test("management mode 可以产出工具调用并在提交 tool result 后完成运行", async () => {
+    const bridge = new CodexBridge({
+      transport: createScriptedCodexTransport([
+        {
+          type: "tool_call",
+          toolName: "schedule.create",
+          arguments: {
+            workspace: "/tmp/carvis-workspace",
+            actionType: "create",
+            label: "日报",
+            scheduleExpr: "0 9 * * *",
+            timezone: "Asia/Shanghai",
+            promptTemplate: "生成日报",
+          },
+        },
+      ]),
+      now: () => new Date("2026-03-08T00:00:00.000Z"),
+    });
+
+    const handle = await bridge.startRun({
+      ...baseRequest,
+      managementMode: "schedule",
+    });
+
+    const iterator = handle.streamEvents()[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.value?.eventType).toBe("agent.tool_call");
+    expect(first.value?.payload).toEqual({
+      run_id: "run-001",
+      tool_name: "schedule.create",
+      arguments: {
+        workspace: "/tmp/carvis-workspace",
+        actionType: "create",
+        label: "日报",
+        scheduleExpr: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        promptTemplate: "生成日报",
+      },
+    });
+
+    await handle.submitToolResult({
+      toolName: "schedule.create",
+      result: {
+        status: "executed",
+        targetDefinitionId: "daily-report",
+        summary: "已创建日报",
+      },
+    });
+
+    const second = await iterator.next();
+    expect(second.value?.eventType).toBe("run.completed");
+    expect(second.value?.payload).toEqual({
+      run_id: "run-001",
+      finished_at: "2026-03-08T00:00:00.000Z",
+      result_summary: "已创建日报",
+    });
+  });
 });

@@ -1,0 +1,14 @@
+{
+  "name": "@carvis/carvis-schedule-cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "carvis-schedule": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@carvis/core": "workspace:*"
+  }
+}

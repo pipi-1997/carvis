@@ -4,7 +4,12 @@ import { Hono } from "hono";
 
 import { registerExternalWebhookRoute } from "./routes/external-webhook.ts";
 import { createFeishuWebhookHandler } from "./routes/feishu-webhook.ts";
+import { registerInternalManagedSchedulesRoutes } from "./routes/internal-managed-schedules.ts";
+import { registerInternalRunToolRoutes } from "./routes/internal-run-tools.ts";
 import { registerInternalTriggersRoutes } from "./routes/internal-triggers.ts";
+import { createManagedSchedulePresenter } from "./services/managed-schedule-presenter.ts";
+import { createRunToolRouter } from "./services/run-tool-router.ts";
+import { createScheduleManagementService } from "./services/schedule-management-service.ts";
 import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
 import { createTriggerDispatcher } from "./services/trigger-dispatcher.ts";
 import { createTriggerStatusPresenter } from "./services/trigger-status-presenter.ts";
@@ -21,6 +26,8 @@ type GatewayAppInput = Parameters<typeof createFeishuWebhookHandler>[0] & {
   triggerConfig?: RuntimeConfig["triggers"];
   triggerDispatcher?: ReturnType<typeof createTriggerDispatcher>;
   triggerStatusPresenter?: ReturnType<typeof createTriggerStatusPresenter>;
+  managedSchedulePresenter?: ReturnType<typeof createManagedSchedulePresenter>;
+  runToolRouter?: ReturnType<typeof createRunToolRouter>;
 };
 
 export function createGatewayApp(input: GatewayAppInput) {
@@ -47,6 +54,17 @@ export function createGatewayApp(input: GatewayAppInput) {
   const triggerStatusPresenter = input.triggerStatusPresenter ?? createTriggerStatusPresenter({
     repositories: input.repositories,
   });
+  const scheduleManagementService = createScheduleManagementService({
+    repositories: input.repositories,
+    now: input.now,
+  });
+  const managedSchedulePresenter = input.managedSchedulePresenter ?? createManagedSchedulePresenter({
+    repositories: input.repositories,
+  });
+  const runToolRouter = input.runToolRouter ?? createRunToolRouter({
+    scheduleManagementService,
+    agentId: input.agentConfig.id,
+  });
   const healthPath = input.healthPath ?? "/healthz";
 
   app.post("/webhooks/feishu", async (context) => {
@@ -70,6 +88,14 @@ export function createGatewayApp(input: GatewayAppInput) {
     app,
     triggerDefinitionSync,
     triggerStatusPresenter,
+  });
+  registerInternalManagedSchedulesRoutes({
+    app,
+    presenter: managedSchedulePresenter,
+  });
+  registerInternalRunToolRoutes({
+    app,
+    runToolRouter,
   });
 
   app.get(healthPath, async (context) => {

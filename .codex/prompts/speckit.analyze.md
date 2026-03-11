@@ -97,6 +97,7 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 
 - Any requirement or plan element conflicting with a MUST principle
 - Missing mandated sections or quality gates from constitution
+- For Carvis features involving agent `tool` / `MCP` / skill capabilities, flag gateway-side heuristic intent gates that decide whether tools are exposed to the agent unless the spec explicitly requires that gate
 
 #### E. Coverage Gaps
 
@@ -176,6 +177,7 @@ Ask the user: "Would you like me to suggest concrete remediation edits for the t
 - **NEVER modify files** (this is read-only analysis)
 - **NEVER hallucinate missing sections** (if absent, report them accurately)
 - **Prioritize constitution violations** (these are always CRITICAL)
+- For Carvis features involving agent `tool` / `MCP` / skill capabilities, treat agent-owned capability exposure and agent-owned invocation decisions as the default; report gateway-side tool-exposure gating as an inconsistency unless explicitly requested by the spec
 - **Use examples over exhaustive rules** (cite specific instances, not generic patterns)
 - **Report zero issues gracefully** (emit success report with coverage statistics)
 

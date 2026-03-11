@@ -1,6 +1,7 @@
 import type { AgentConfig, CancelSignalDriver, HeartbeatDriver, RepositoryBundle, Run, RunEvent } from "@carvis/core";
 import type { CodexBridge } from "@carvis/bridge-codex";
 
+import { GatewayToolClientError } from "./gateway-tool-client.ts";
 import { renewRunHeartbeat } from "./heartbeat.ts";
 
 export function createRunController(input: {
@@ -9,6 +10,14 @@ export function createRunController(input: {
   cancelSignals: CancelSignalDriver;
   heartbeats: HeartbeatDriver;
   bridge: CodexBridge;
+  toolInvoker?: {
+    execute(input: {
+      run: Run;
+      session: { chatId: string; id: string } | null;
+      toolName: string;
+      arguments: Record<string, unknown>;
+    }): Promise<Record<string, unknown>>;
+  };
   logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   notifier: {
     notifyRunEvent(session: { chatId: string } | null, event: RunEvent): Promise<void>;
@@ -37,6 +46,7 @@ export function createRunController(input: {
           const handle = await input.bridge.startRun({
             id: run.id,
             sessionId: run.sessionId,
+            chatId: session?.chatId ?? null,
             agentId: run.agentId,
             workspace: run.workspace,
             prompt: run.prompt,
@@ -148,6 +158,45 @@ export function createRunController(input: {
               continue;
             }
 
+            if (event.eventType === "agent.tool_call") {
+              const toolName = String((event.payload as Record<string, unknown>).tool_name ?? "");
+              const args = ((event.payload as Record<string, unknown>).arguments ?? {}) as Record<string, unknown>;
+              const handledByTransport = (event.payload as Record<string, unknown>).handled_by_transport === true;
+              if (handledByTransport) {
+                continue;
+              }
+              if (!input.toolInvoker) {
+                await input.repositories.runs.markRunFailed(
+                  run.id,
+                  now().toISOString(),
+                  "tool_invoker_missing",
+                  `no tool invoker for ${toolName}`,
+                );
+                return;
+              }
+              const toolResult = await input.toolInvoker.execute({
+                run,
+                session: session ? { chatId: session.chatId, id: session.id } : null,
+                toolName,
+                arguments: args,
+              });
+              await input.repositories.events.appendEvent({
+                runId: run.id,
+                eventType: "agent.tool_result",
+                payload: {
+                  run_id: run.id,
+                  tool_name: toolName,
+                  result: toolResult,
+                },
+                now: now(),
+              });
+              await handle.submitToolResult({
+                toolName,
+                result: toolResult,
+              });
+              continue;
+            }
+
             if (event.eventType === "run.completed") {
               const resolvedBridgeSessionId =
                 typeof event.payload.bridge_session_id === "string" ? event.payload.bridge_session_id : null;
@@ -242,6 +291,9 @@ export function createRunController(input: {
         }
       } catch (error) {
         const failureMessage = error instanceof Error ? error.message : String(error);
+        const failureCode = error instanceof GatewayToolClientError
+          ? error.failureCode
+          : "bridge_error";
         if (recoveryAttempted) {
           if (session) {
             await input.repositories.conversationSessionBindings.markBindingInvalidated({
@@ -265,12 +317,12 @@ export function createRunController(input: {
           eventType: "run.failed",
           payload: {
             run_id: run.id,
-            failure_code: "bridge_error",
+            failure_code: failureCode,
             failure_message: failureMessage,
           },
           now: now(),
         });
-        await input.repositories.runs.markRunFailed(run.id, now().toISOString(), "bridge_error", failureMessage, {
+        await input.repositories.runs.markRunFailed(run.id, now().toISOString(), failureCode, failureMessage, {
           sessionRecoveryAttempted: recoveryAttempted,
           sessionRecoveryResult: recoveryAttempted ? "failed" : null,
         });
@@ -278,7 +330,7 @@ export function createRunController(input: {
           const execution = await input.repositories.triggerExecutions.updateExecution({
             executionId: run.triggerExecutionId,
             status: "failed",
-            failureCode: "bridge_error",
+            failureCode,
             failureMessage,
             finishedAt: now().toISOString(),
             now: now(),

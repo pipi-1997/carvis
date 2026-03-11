@@ -98,6 +98,41 @@ describe("executor startup", () => {
       },
     });
   });
+
+  test("carvis-schedule readiness probe 失败时进入 CODEX_UNAVAILABLE", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+
+    const runtimeServices = createFakeRuntimeServices(harness.env);
+    const executor = await runExecutor({
+      autoStartLoop: false,
+      createBridge: () => new CodexBridge({
+        healthcheck: async () => {
+          throw new Error("carvis-schedule unavailable: command not found");
+        },
+        transport: createScriptedCodexTransport([
+          {
+            type: "result",
+            resultSummary: "executor runtime ready",
+          },
+        ]),
+      }),
+      createRuntimeServices: async () => runtimeServices,
+      env: harness.env,
+    });
+    cleanupCallbacks.push(executor.stop);
+
+    expect(executor.startupReport).toMatchObject({
+      status: "failed",
+      postgresReady: true,
+      redisReady: true,
+      codexReady: false,
+      consumerActive: false,
+      errorCode: "CODEX_UNAVAILABLE",
+      errorMessage: "carvis-schedule unavailable: command not found",
+    });
+    expect(await executor.tick()).toBe(false);
+  });
 });
 
 function createFakeRuntimeServices(

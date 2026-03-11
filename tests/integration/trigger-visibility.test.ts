@@ -5,8 +5,8 @@ import { createHarness } from "../support/harness.ts";
 describe("trigger visibility integration", () => {
   test("delivery failure 与 run completed 在内部查询面分离展示", async () => {
     const harness = createHarness({
-      delivery: {
-        failSendMessage: true,
+      presentation: {
+        failCardUpdate: true,
       },
       triggerConfig: {
         scheduledJobs: [
@@ -44,6 +44,12 @@ describe("trigger visibility integration", () => {
         run: expect.objectContaining({
           status: "completed",
         }),
+        deliveries: expect.arrayContaining([
+          expect.objectContaining({
+            deliveryKind: "card_complete",
+            status: "failed",
+          }),
+        ]),
       }),
     );
   });

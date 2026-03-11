@@ -23,7 +23,7 @@ export function createSchedulerLoop(input: SchedulerLoopInput) {
 
   return {
     async runOnce(): Promise<SchedulerLoopResult> {
-      const definitions = await input.repositories.triggerDefinitions.listDefinitions();
+      const definitions = await input.repositories.triggerDefinitions.listEffectiveDefinitions();
       const result: SchedulerLoopResult = {
         dispatched: [],
         missed: [],

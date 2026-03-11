@@ -31,6 +31,7 @@ describe("local runtime e2e", () => {
 
     const gateway = await startGateway({
       createRuntimeServices: async () => shared.services,
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
       serve: (options) => ({
         port: Number(options.port),
         stop() {},

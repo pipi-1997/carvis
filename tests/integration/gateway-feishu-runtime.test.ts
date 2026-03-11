@@ -100,7 +100,10 @@ describe("gateway feishu runtime wiring", () => {
 
     const latestRun = await harness.repositories.runs.getLatestRunByChat("feishu", "chat-001");
     expect(latestRun?.status).toBe("queued");
-    expect(latestRun?.prompt).toBe("帮我总结仓库目标");
+    expect(latestRun?.prompt).toContain("use the local carvis-schedule CLI");
+    expect(latestRun?.prompt).toContain("resolves the current runtime context internally");
+    expect(latestRun?.prompt).not.toContain('--requested-text "$CARVIS_REQUESTED_TEXT"');
+    expect(latestRun?.prompt).toContain('Original user request JSON: "帮我总结仓库目标"');
     expect(runtime.health.snapshot().state.ready).toBe(false);
   });
 });
