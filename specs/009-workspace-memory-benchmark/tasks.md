@@ -57,9 +57,9 @@
 - [X] T013 [P] [US1] Seed minimal golden fixtures in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l1-golden/remember-bun.json` and `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l1-golden/not-memory-chat.json`
 - [X] T014 [P] [US1] Implement case scoring logic in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-score.ts`
 - [X] T015 [P] [US1] Implement default Gate Profile and gate evaluation logic in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-gates.ts`
-- [X] T016 [US1] Implement suite runner and aggregate reporting in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-runner.ts`, including P50/P95 aggregation for cost metrics, `filesScannedPerSync` aggregation, and trace summaries required by the report contract
+- [X] T016 [US1] Implement suite runner and aggregate reporting in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-runner.ts`, including P50/P95 aggregation for cost metrics, `filesScannedPerSync` aggregation, `toolCallCount` / `toolReadCount` / `toolWriteCount` aggregation, and trace summaries required by the report contract
 - [X] T017 [US1] Add developer-facing local benchmark scripts such as `test:memory-benchmark` to `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/package.json`
-- [X] T018 [US1] Add unit coverage for scoring, default gate profile, cost metric aggregation, and sync scan metric aggregation in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/unit/memory-benchmark-score.test.ts` and `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/unit/memory-benchmark-gates.test.ts`
+- [X] T018 [US1] Add unit coverage for scoring, default gate profile, cost metric aggregation, sync scan metric aggregation, and hot-path tool-count gate coverage in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/unit/memory-benchmark-score.test.ts` and `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/unit/memory-benchmark-gates.test.ts`
 
 **检查点**: 到这里，维护者已经可以运行离线 benchmark，并查看最小可用的报告和 gate 结果。这是 MVP。
 
@@ -79,8 +79,8 @@
 ### 用户故事 2 的实现
 
 - [X] T021 [P] [US2] Add natural-language remember/update golden fixtures in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l1-golden/natural-language-remember.json` and `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l1-golden/update-supersedes-old-fact.json`
-- [X] T022 [P] [US2] Add `/new`-after-recall replay fixture in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l2-replay/continued-after-new.json`
-- [X] T023 [P] [US2] Add adversarial fixtures for noisy chat and stale recall in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l3-adversarial/noisy-chat-not-memory.json` and `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l3-adversarial/superseded-fact-not-recalled.json`
+- [X] T022 [P] [US2] Add replay fixtures for `/new`-after-recall, repeated recall, large curated memory, long-horizon growth, and update-then-repeated-recall under `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l2-replay/`
+- [X] T023 [P] [US2] Add adversarial fixtures for noisy chat, stale recall, and tool retry pressure under `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/fixtures/memory-benchmark/l3-adversarial/`
 - [X] T024 [US2] Extend `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-runner.ts` to run all suites and aggregate per-suite metrics
 - [X] T025 [US2] Extend `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-score.ts` to score false writes, stale recall and missed durable recall against fixture expectations
 
@@ -102,7 +102,7 @@
 ### 用户故事 3 的实现
 
 - [X] T028 [P] [US3] Implement rollout recommendation mapping in `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-gates.ts`
-- [X] T029 [US3] Extend `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-runner.ts` to emit operator-facing gate summaries and failure reasons
+- [X] T029 [US3] Extend `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/tests/support/memory-benchmark-runner.ts` to emit operator-facing gate summaries and failure reasons, including hot-path cost failures
 - [X] T030 [US3] Add benchmark ops guidance and explicit test-double versus runtime-reuse boundary notes to `/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/specs/009-workspace-memory-benchmark/quickstart.md`
 
 **检查点**: 到这里，benchmark 不只是测试工具，而是 rollout 决策工具。

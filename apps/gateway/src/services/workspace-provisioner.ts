@@ -1,7 +1,7 @@
-import { cp, mkdir } from "node:fs/promises";
+import { access, cp, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { RepositoryBundle, RuntimeConfig, WorkspaceCatalogEntry } from "@carvis/core";
+import { ensureWorkspaceTemplateScaffold, type RepositoryBundle, type RuntimeConfig, type WorkspaceCatalogEntry } from "@carvis/core";
 
 export type ResolvedWorkspaceTarget = {
   workspaceKey: string;
@@ -34,6 +34,8 @@ export function createWorkspaceProvisioner(input: {
 
       const workspacePath = join(input.workspaceResolverConfig.managedWorkspaceRoot, workspaceKey);
       try {
+        await access(input.workspaceResolverConfig.templatePath);
+        await ensureWorkspaceTemplateScaffold(input.workspaceResolverConfig.templatePath);
         await mkdir(input.workspaceResolverConfig.managedWorkspaceRoot, { recursive: true });
         await cp(input.workspaceResolverConfig.templatePath, workspacePath, {
           errorOnExist: true,

@@ -47,6 +47,7 @@ export function createExecutorWorker(input: {
   });
   const consumer = createRunConsumer({
     agentConfig: input.agentConfig,
+    cancelSignals: input.cancelSignals,
     repositories: input.repositories,
     queue: input.queue,
     workspaceLocks: input.workspaceLocks,

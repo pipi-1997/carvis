@@ -24,11 +24,28 @@ describe("memory benchmark trace integration", () => {
         augmentationTokens: 0,
         augmentationTokenRatio: 0,
         filesScannedPerSync: 0,
+        toolCallCount: 0,
+        toolReadCount: 0,
+        toolWriteCount: 0,
       },
     });
 
     expect(trace.bridgeRequests.length).toBe(1);
     expect(trace.userVisibleOutputs.length).toBeGreaterThanOrEqual(0);
     expect(trace.signalSources.queue).toBe("runtime-reuse");
+    expect(trace.manualEditPaths).toEqual([]);
+    expect(trace.memoryWriteObservations).toEqual([]);
+    expect(trace.memoryFlushObservation).toEqual({
+      triggered: false,
+      changed: false,
+      targetPath: null,
+      writeCount: 0,
+    });
+    expect(trace.memoryExcerpt).toEqual({
+      approxTokens: 0,
+      excerptText: "",
+      selectedSections: [],
+      sources: [],
+    });
   });
 });

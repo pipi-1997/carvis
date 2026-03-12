@@ -1,0 +1,50 @@
+{
+  "id": "replay-update-then-repeated-recall",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-update-repeat",
+      "messageId": "msg-801",
+      "text": "/remember 本项目使用 yarn"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update-repeat",
+      "messageId": "msg-802",
+      "text": "之前说用 yarn 作废，现在统一 bun"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update-repeat",
+      "messageId": "msg-803",
+      "text": "怎么启动这个项目"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update-repeat",
+      "messageId": "msg-804",
+      "text": "测试命令是什么"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-update-repeat",
+      "messageId": "msg-805",
+      "text": "CI 应该怎么跑"
+    }
+  ],
+  "expectation": {
+    "intent": "update",
+    "expectedWrites": [
+      "bun"
+    ],
+    "recalledItemTitles": [
+      "bun"
+    ],
+    "forbiddenItemTitles": [
+      "yarn"
+    ],
+    "gateCritical": false
+  }
+}

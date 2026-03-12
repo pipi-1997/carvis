@@ -7,7 +7,7 @@
 
 ## 摘要
 
-本功能为 `carvis` 的 workspace memory 建立第一阶段 benchmark 能力，用于在修改记忆写入、召回和自然语言记忆意图识别后，提供一套离线、可重复、可聚合判分的 gate。方案以现有 `tests/support/harness.ts` 为运行底座，新增 benchmark domain model、fixture corpus、trace collection、scorer、gate evaluator 和 suite 级报告输出；第一阶段以 `L1-golden` 为硬门槛，同时预留 `L2-replay` 与 `L3-adversarial` 的扩展空间。benchmark 复用测试中的 `gateway -> queue -> executor -> bridge` 路径来采集信号，但不改变任何生产执行拓扑。
+本功能为 `carvis` 的 workspace memory 建立第一阶段 benchmark 能力，用于在修改记忆写入、召回和自然语言记忆意图识别后，提供一套离线、可重复、可聚合判分的 gate。方案以现有 `tests/support/harness.ts` 为运行底座，新增 benchmark domain model、fixture corpus、trace collection、scorer、gate evaluator 和 suite 级报告输出；第一阶段以 `L1-golden` 为硬门槛，同时在 `L2-replay` 与 `L3-adversarial` 中补充 repeated recall、large curated memory、长程增长和 tool retry 等压力样例。benchmark 复用测试中的 `gateway -> queue -> executor -> bridge` 路径来采集信号，但不改变任何生产执行拓扑。
 
 ## 技术上下文
 
@@ -21,7 +21,7 @@
 - **智能体范围**: Codex
 - **运行拓扑**: 复用现有 `gateway -> queue -> executor -> bridge` 测试路径进行受控观测；新增 benchmark runner、scorer、gate，但不引入新的生产执行路径
 - **可观测性**: 输出 case 级和 suite 级报告，记录 classification、writes、recalls、bridgeRequests、userVisibleOutputs、runtimeOutcome、token/latency 指标和 gate 失败原因，并明确哪些信号来自测试替身
-- **性能目标**: benchmark 报告必须直接暴露 `classifierLatencyMs`、`recallLatencyMs`、`preflightLatencyMs`、`augmentationTokens`、`augmentationTokenRatio`、`filesScannedPerSync` 等指标，并支持 P50/P95 聚合
+- **性能目标**: benchmark 报告必须直接暴露 `classifierLatencyMs`、`recallLatencyMs`、`preflightLatencyMs`、`augmentationTokens`、`augmentationTokenRatio`、`filesScannedPerSync`、`toolCallCount`、`toolReadCount`、`toolWriteCount` 等指标，并支持 P50/P95 聚合
 - **约束条件**: 保持 `ChannelAdapter` / `AgentBridge` 边界；不绕过现有 workspace queue/lock 语义；不把 benchmark 误当作线上 telemetry；one active run per workspace 语义保持不变
 - **规模/范围**: 第一阶段覆盖 `L1-golden` 主集和少量 `L2-replay`、`L3-adversarial` 样例；优先支持 memory benchmark 离线运行，不包含生产流量采样
 
@@ -88,7 +88,7 @@ tests/
 
 - 第一阶段 benchmark 应采用离线、可重复的 harness 驱动评测
 - fixture 与 report 需要成为显式契约
-- red-line gate 先固定在误写、旧事实污染和 durable recall 漏召回
+- red-line gate 除了误写、旧事实污染和 durable recall 漏召回外，还要覆盖 preflight 延迟、扫描量与工具调用风暴
 - benchmark 是 rollout gate，不替代现有 contract/integration 测试
 
 详见 [research.md](/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/specs/009-workspace-memory-benchmark/research.md)。
@@ -96,7 +96,7 @@ tests/
 ## Phase 1：设计产物
 
 - [data-model.md](/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/specs/009-workspace-memory-benchmark/data-model.md)
-  - 定义 `Benchmark Case`、`Expectation`、`Trace`、`Suite Report`、`Gate Profile`
+  - 定义 `Benchmark Case`、`Expectation`、`Trace`、`Suite Report`、`Gate Profile`，并纳入工具调用与热路径成本字段
 - [contracts/benchmark-fixture-contract.md](/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/specs/009-workspace-memory-benchmark/contracts/benchmark-fixture-contract.md)
   - 定义输入样例契约
 - [contracts/benchmark-report-contract.md](/Users/pipi/workspace/carvis/.worktrees/009-workspace-memory-benchmark/specs/009-workspace-memory-benchmark/contracts/benchmark-report-contract.md)

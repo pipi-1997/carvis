@@ -784,13 +784,17 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
     async findActiveRunBySession(sessionId) {
       const run = Array.from(runs.values()).find(
-        (candidate) => candidate.sessionId === sessionId && candidate.status === "running",
+        (candidate) =>
+          candidate.sessionId === sessionId
+          && (candidate.status === "queued" || candidate.status === "running"),
       );
       return run ? clone(run) : null;
     },
     async findActiveRunByWorkspace(workspace) {
       const run = Array.from(runs.values()).find(
-        (candidate) => candidate.workspace === workspace && candidate.status === "running",
+        (candidate) =>
+          candidate.workspace === workspace
+          && (candidate.status === "queued" || candidate.status === "running"),
       );
       return run ? clone(run) : null;
     },
@@ -1769,14 +1773,14 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     },
     async findActiveRunBySession(sessionId) {
       const result = await client.query<Run>(
-        `${selectRunSql} WHERE session_id = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
+        `${selectRunSql} WHERE session_id = $1 AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1`,
         [sessionId],
       );
       return result.rows[0] ?? null;
     },
     async findActiveRunByWorkspace(workspace) {
       const result = await client.query<Run>(
-        `${selectRunSql} WHERE workspace = $1 AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
+        `${selectRunSql} WHERE workspace = $1 AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1`,
         [workspace],
       );
       return result.rows[0] ?? null;

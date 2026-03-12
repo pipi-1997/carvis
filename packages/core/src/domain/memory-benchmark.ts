@@ -38,6 +38,9 @@ export interface MemoryBenchmarkMetrics {
   augmentationTokens: number;
   augmentationTokenRatio: number;
   filesScannedPerSync: number;
+  toolCallCount: number;
+  toolReadCount: number;
+  toolWriteCount: number;
 }
 
 export interface MemoryBenchmarkSignalSources {
@@ -52,6 +55,25 @@ export interface MemoryBenchmarkTrace {
   classification: MemoryBenchmarkIntent;
   writes: string[];
   recalls: string[];
+  manualEditPaths: string[];
+  memoryWriteObservations: Array<{
+    targetPath: string;
+    changeType: "long_term" | "daily";
+    changed: boolean;
+    summary: string;
+  }>;
+  memoryFlushObservation: {
+    triggered: boolean;
+    changed: boolean;
+    targetPath: string | null;
+    writeCount: number;
+  };
+  memoryExcerpt: {
+    excerptText: string;
+    sources: string[];
+    selectedSections: string[];
+    approxTokens: number;
+  };
   bridgeRequests: Array<Pick<RunRequest, "prompt" | "workspace"> & { sessionMode: string }>;
   userVisibleOutputs: Array<{
     kind: string;
@@ -81,6 +103,9 @@ export interface MemoryBenchmarkGateProfile {
   missedDurableRecallRateMax: number;
   recallHitRateMin: number;
   augmentationTokenRatioMax: number;
+  preflightLatencyMsP95Max: number;
+  filesScannedPerSyncP95Max: number;
+  toolCallCountP95Max: number;
 }
 
 export interface MemoryBenchmarkAggregateMetrics {
@@ -98,6 +123,12 @@ export interface MemoryBenchmarkAggregateMetrics {
   augmentationTokensP50: number;
   augmentationTokensP95: number;
   filesScannedPerSyncP95: number;
+  toolCallCountP50: number;
+  toolCallCountP95: number;
+  toolReadCountP50: number;
+  toolReadCountP95: number;
+  toolWriteCountP50: number;
+  toolWriteCountP95: number;
 }
 
 export interface MemoryBenchmarkGateResult {
@@ -122,4 +153,3 @@ export interface MemoryBenchmarkAggregateReport {
   globalGate: MemoryBenchmarkGateResult;
   rolloutRecommendation: MemoryBenchmarkRolloutRecommendation;
 }
-

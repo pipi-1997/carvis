@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 
 import { createExecutorWorker } from "../../apps/executor/src/worker.ts";
 import { createGatewayApp } from "../../apps/gateway/src/app.ts";
@@ -23,6 +25,7 @@ import { createInMemoryRepositories } from "../../packages/core/src/storage/repo
 import { CancelSignalStore } from "../../packages/core/src/runtime/cancel-signal.ts";
 import { HeartbeatMonitor } from "../../packages/core/src/runtime/heartbeat.ts";
 import { RunQueue } from "../../packages/core/src/runtime/queue.ts";
+import { ensureWorkspaceTemplateScaffoldSync } from "../../packages/core/src/runtime/workspace-template.ts";
 import { WorkspaceLockManager } from "../../packages/core/src/runtime/workspace-lock.ts";
 
 export const TEST_AGENT_CONFIG: AgentConfig = {
@@ -168,6 +171,27 @@ export function createHarness(options?: {
       workspace: string;
       sessionMode: string;
     }>,
+    memoryWriteObservations: [] as Array<{
+      targetPath: string;
+      changeType: "long_term" | "daily";
+      changed: boolean;
+      summary: string;
+    }>,
+    manualEditPaths: [] as string[],
+    memoryFlushObservation: {
+      triggered: false,
+      changed: false,
+      targetPath: null as string | null,
+      writeCount: 0,
+    },
+    memoryExcerpt: {
+      excerptText: "",
+      sources: [] as string[],
+      selectedSections: [] as string[],
+      approxTokens: 0,
+    },
+    preflightLatencyMs: 0,
+    filesScanned: 0,
     userVisibleOutputs: [] as Array<{
       kind: string;
       content: string;
@@ -403,7 +427,7 @@ export function createHarness(options?: {
     },
     now,
   });
-  const executor = createExecutorWorker({
+  const executorWorker = createExecutorWorker({
     agentConfig,
     repositories,
     queue,
@@ -432,14 +456,65 @@ export function createHarness(options?: {
         return payload.result;
       },
     },
+    logger,
     notifier,
     now,
   });
+  function syncMemoryBenchmarkTraceFromLogs() {
+    const entries = logger.listEntries();
+    const writeEntries = entries.filter((entry) => entry.message === "workspace.memory.write");
+    memoryBenchmarkTrace.memoryWriteObservations = writeEntries.map((entry) => ({
+      targetPath: String(entry.context?.targetPath ?? ""),
+      changeType: (entry.context?.changeType === "daily" ? "daily" : "long_term"),
+      changed: true,
+      summary: String(entry.context?.summary ?? ""),
+    }));
+    const latestPreflight = [...entries].reverse().find((entry) => entry.message === "workspace.memory.preflight");
+    const latestFlush = [...entries].reverse().find((entry) => entry.message === "workspace.memory.flush");
+    if (!latestPreflight) {
+      if (latestFlush) {
+        memoryBenchmarkTrace.memoryFlushObservation = {
+          triggered: true,
+          changed: Boolean(latestFlush.context?.changed),
+          targetPath: latestFlush.context?.targetPath ? String(latestFlush.context.targetPath) : null,
+          writeCount: Number(latestFlush.context?.writeCount ?? 0),
+        };
+      }
+      return;
+    }
+    memoryBenchmarkTrace.memoryExcerpt = {
+      excerptText: String(latestPreflight.context?.excerptText ?? ""),
+      sources: Array.isArray(latestPreflight.context?.sources)
+        ? latestPreflight.context.sources.map((item) => String(item))
+        : [],
+      selectedSections: Array.isArray(latestPreflight.context?.selectedSections)
+        ? latestPreflight.context.selectedSections.map((item) => String(item))
+        : [],
+      approxTokens: Math.ceil(String(latestPreflight.context?.excerptText ?? "").length / 4),
+    };
+    memoryBenchmarkTrace.preflightLatencyMs = Number(latestPreflight.context?.preflightLatencyMs ?? 0);
+    memoryBenchmarkTrace.filesScanned = Number(latestPreflight.context?.filesScanned ?? 0);
+    memoryBenchmarkTrace.memoryFlushObservation = latestFlush
+      ? {
+          triggered: true,
+          changed: Boolean(latestFlush.context?.changed),
+          targetPath: latestFlush.context?.targetPath ? String(latestFlush.context.targetPath) : null,
+          writeCount: Number(latestFlush.context?.writeCount ?? 0),
+        }
+      : {
+          triggered: false,
+          changed: false,
+          targetPath: null,
+          writeCount: 0,
+        };
+  }
+  let lastObservedManualHashes = snapshotWorkspaceMemoryFiles(agentConfig.workspace);
   const reaper = createRunReaper({
     repositories,
     heartbeats,
     queue,
     workspaceLocks,
+    logger,
     notifier,
     cancelSignals,
     now,
@@ -536,7 +611,16 @@ export function createHarness(options?: {
     bridge,
     bridgeRequests,
     cancelSignals,
-    executor,
+    executor: {
+      async processNext() {
+        const beforeHashes = snapshotWorkspaceMemoryFiles(agentConfig.workspace);
+        memoryBenchmarkTrace.manualEditPaths = diffWorkspaceMemoryHashes(lastObservedManualHashes, beforeHashes);
+        const result = await executorWorker.processNext();
+        syncMemoryBenchmarkTraceFromLogs();
+        lastObservedManualHashes = snapshotWorkspaceMemoryFiles(agentConfig.workspace);
+        return result;
+      },
+    },
     gateway,
     getInternalTriggers,
     getInternalManagedSchedules,
@@ -662,4 +746,48 @@ function writeStarterTemplate(templatePath: string) {
   writeFileSync(`${templatePath}/README.md`, "# template\n\nManaged workspace starter.\n");
   writeFileSync(`${templatePath}/.gitignore`, ".DS_Store\nnode_modules/\n.codex/\n");
   writeFileSync(`${templatePath}/AGENTS.md`, "This is a managed workspace starter.\n");
+  ensureWorkspaceTemplateScaffoldSync(templatePath);
+}
+
+function snapshotWorkspaceMemoryFiles(workspacePath: string): Map<string, string> {
+  const result = new Map<string, string>();
+  const carvisDir = path.join(workspacePath, ".carvis");
+  const memoryPath = path.join(carvisDir, "MEMORY.md");
+  try {
+    const stat = statSync(memoryPath);
+    if (stat.isFile()) {
+      result.set(".carvis/MEMORY.md", createHash("sha256").update(readFileSync(memoryPath, "utf8")).digest("hex"));
+    }
+  } catch {}
+  const dailyDir = path.join(carvisDir, "memory");
+  try {
+    for (const entry of readdirSync(dailyDir)) {
+      const absolute = path.join(dailyDir, entry);
+      const stat = statSync(absolute);
+      if (!stat.isFile()) continue;
+      result.set(
+        path.join(".carvis", "memory", entry).replace(/\\/g, "/"),
+        createHash("sha256").update(readFileSync(absolute, "utf8")).digest("hex"),
+      );
+    }
+  } catch {}
+  return result;
+}
+
+function diffWorkspaceMemoryHashes(
+  previous: Map<string, string>,
+  current: Map<string, string>,
+): string[] {
+  const changed = new Set<string>();
+  for (const [filePath, hash] of current.entries()) {
+    if (previous.get(filePath) !== hash) {
+      changed.add(filePath);
+    }
+  }
+  for (const filePath of previous.keys()) {
+    if (!current.has(filePath)) {
+      changed.add(filePath);
+    }
+  }
+  return [...changed];
 }

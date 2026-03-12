@@ -205,6 +205,34 @@ describe("runtime logger", () => {
     ]);
   });
 
+  test("workspace memory 事件会输出结构化日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.workspaceMemoryState("write", {
+      runId: "run-001",
+      workspace: "/tmp/workspace",
+      targetPath: ".carvis/MEMORY.md",
+      changeType: "long_term",
+      createdFile: true,
+      summary: "updated long-term workspace memory",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "info",
+      message: "workspace.memory.write",
+      context: {
+        role: "executor",
+        status: "write",
+        runId: "run-001",
+        workspace: "/tmp/workspace",
+        targetPath: ".carvis/MEMORY.md",
+        changeType: "long_term",
+        createdFile: true,
+        summary: "updated long-term workspace memory",
+      },
+    });
+  });
+
   test("presentation transform 日志角色可按运行进程标注为 executor", () => {
     const logger = createRuntimeLogger();
 

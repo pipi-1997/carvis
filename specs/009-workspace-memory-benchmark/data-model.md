@@ -67,13 +67,13 @@
 | `recalls` | 实际命中的 memory 摘要 |
 | `bridgeRequests` | 实际发给 bridge 的请求摘要 |
 | `userVisibleOutputs` | 用户可见输出的摘要 |
-| `metrics` | 本案例的 token、latency、scan 开销 |
+| `metrics` | 本案例的 token、latency、scan 开销，以及工具读写调用规模 |
 | `runtimeOutcome` | 样例运行状态，例如成功、失败、取消 |
 | `signalSources` | 说明 queue、lock、heartbeat 等信号来自真实运行复用还是测试替身 |
 
 ### 校验规则
 
-- `metrics` 至少应包含 `classifierLatencyMs`、`recallLatencyMs`、`preflightLatencyMs`、`augmentationTokens`、`augmentationTokenRatio`。
+- `metrics` 至少应包含 `classifierLatencyMs`、`recallLatencyMs`、`preflightLatencyMs`、`augmentationTokens`、`augmentationTokenRatio`、`filesScannedPerSync`、`toolCallCount`、`toolReadCount`、`toolWriteCount`。
 - `runtimeOutcome` 需和 memory 判分分离，避免把基础运行失败误判为 memory 质量问题。
 - `signalSources` 必须能解释关键运行信号的来源，避免 operator 将测试替身误解为生产观测。
 
@@ -119,11 +119,15 @@ loaded -> executed -> traced -> scored -> aggregated
 | `missedDurableRecallRateMax` | durable recall 漏召回上限 |
 | `recallHitRateMin` | recall 命中率下限 |
 | `augmentationTokenRatioMax` | augmentation token 占比上限 |
+| `preflightLatencyMsP95Max` | preflight 热路径延迟上限 |
+| `filesScannedPerSyncP95Max` | 单次同步扫描文件数上限 |
+| `toolCallCountP95Max` | 热路径工具调用次数上限 |
 
 ### 约束
 
 - 第一阶段默认 gate 应对 `L1-golden` 最严格。
 - `falseWriteRateMax` 和 `staleRecallRateMax` 在 `L1-golden` 中应默认为 0。
+- `preflightLatencyMsP95Max`、`filesScannedPerSyncP95Max`、`toolCallCountP95Max` 应作为默认 gate 的硬门槛，而不是仅做旁路观测。
 - 第一阶段允许只提供默认 `Gate Profile`，暂不要求外部配置入口。
 
 ## 8. Benchmark Aggregate Report

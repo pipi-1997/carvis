@@ -57,8 +57,8 @@ describe("external webhook integration", () => {
     const execution = await harness.repositories.triggerExecutions.getExecutionByRunId(queuedRun?.id ?? "");
     expect(harness.bridgeRequests.at(-1)).toMatchObject({
       sessionId: null,
-      prompt: "分析 main branch CI failed @ main",
     });
+    expect(harness.bridgeRequests.at(-1)?.prompt).toContain("分析 main branch CI failed @ main");
     expect(execution).toMatchObject({
       status: "completed",
       deliveryStatus: "sent",
@@ -110,7 +110,7 @@ describe("external webhook integration", () => {
 
     expect(harness.bridgeRequests.at(-1)).toMatchObject({
       workspace: harness.agentConfig.workspace,
-      prompt: "workspace?  summary=CI failed",
     });
+    expect(harness.bridgeRequests.at(-1)?.prompt).toContain("workspace?  summary=CI failed");
   });
 });

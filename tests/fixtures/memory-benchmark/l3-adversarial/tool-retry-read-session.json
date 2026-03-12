@@ -1,0 +1,17 @@
+{
+  "id": "adversarial-tool-retry-read-session",
+  "suite": "L3-adversarial",
+  "workspaceKey": "main",
+  "transcript": [
+    { "role": "user", "chatId": "chat-tool-retry", "messageId": "msg-951", "text": "/remember 本项目统一使用 bun" },
+    { "role": "user", "chatId": "chat-tool-retry", "messageId": "msg-952", "text": "遇到工具超时重试也要告诉我怎么启动这个项目" },
+    { "role": "user", "chatId": "chat-tool-retry", "messageId": "msg-953", "text": "再说一次，工具失败重试后怎么启动" }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": ["bun"],
+    "recalledItemTitles": ["bun"],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

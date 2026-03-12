@@ -90,6 +90,26 @@ type PresentationStateInput = {
   role?: "gateway" | "executor";
 };
 
+type WorkspaceMemoryStateInput = {
+  runId: string;
+  workspace: string;
+  filesScanned?: number;
+  sources?: string[];
+  selectedSections?: string[];
+  excerptText?: string;
+  augmentationChars?: number;
+  preflightLatencyMs?: number;
+  targetPath?: string;
+  changeType?: string;
+  createdFile?: boolean;
+  summary?: string;
+  changed?: boolean;
+  writeCount?: number;
+  failureCode?: string;
+  failureMessage?: string;
+  reason?: string;
+};
+
 export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
   return {
     commandState(status: "recognized" | "unknown" | "mention_normalized", input: CommandStateInput) {
@@ -133,6 +153,33 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         ...(input.degradedFragments && input.degradedFragments.length > 0
           ? { degradedFragments: input.degradedFragments }
           : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
+    workspaceMemoryState(
+      status: "preflight" | "write" | "noop" | "flush" | "failed" | "cancelled",
+      input: WorkspaceMemoryStateInput,
+    ) {
+      const level = status === "failed" || status === "cancelled" ? "warn" : "info";
+      baseLogger[level](`workspace.memory.${status}`, {
+        role: "executor",
+        status,
+        runId: input.runId,
+        workspace: input.workspace,
+        ...(typeof input.filesScanned === "number" ? { filesScanned: input.filesScanned } : {}),
+        ...(input.sources ? { sources: input.sources } : {}),
+        ...(input.selectedSections ? { selectedSections: input.selectedSections } : {}),
+        ...(typeof input.excerptText === "string" ? { excerptText: input.excerptText } : {}),
+        ...(typeof input.augmentationChars === "number" ? { augmentationChars: input.augmentationChars } : {}),
+        ...(typeof input.preflightLatencyMs === "number" ? { preflightLatencyMs: input.preflightLatencyMs } : {}),
+        ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+        ...(input.changeType ? { changeType: input.changeType } : {}),
+        ...(typeof input.createdFile === "boolean" ? { createdFile: input.createdFile } : {}),
+        ...(input.summary ? { summary: input.summary } : {}),
+        ...(typeof input.changed === "boolean" ? { changed: input.changed } : {}),
+        ...(typeof input.writeCount === "number" ? { writeCount: input.writeCount } : {}),
+        ...(input.failureCode ? { failureCode: input.failureCode } : {}),
+        ...(input.failureMessage ? { failureMessage: input.failureMessage } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
       });
     },

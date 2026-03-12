@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ensureWorkspaceTemplateScaffold } from "../../packages/core/src/runtime/workspace-template.ts";
+
 type RuntimeConfigFixture = {
   agent: {
     id: string;
@@ -256,4 +258,5 @@ async function writeStarterTemplate(templateDir: string) {
     join(templateDir, "AGENTS.md"),
     "This is a managed workspace starter. Keep work local to this directory.\n",
   );
+  await ensureWorkspaceTemplateScaffold(templateDir);
 }

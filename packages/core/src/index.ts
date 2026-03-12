@@ -9,6 +9,7 @@ export * from "./runtime/heartbeat.ts";
 export * from "./runtime/queue.ts";
 export * from "./runtime/redis-client.ts";
 export * from "./runtime/runtime-factory.ts";
+export * from "./runtime/workspace-template.ts";
 export * from "./runtime/workspace-lock.ts";
 export * from "./storage/postgres-client.ts";
 export * from "./storage/migrate.ts";

@@ -1,0 +1,30 @@
+{
+  "id": "replay-daily-context-write",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-daily-write",
+      "messageId": "msg-dw-001",
+      "text": "今天我们把 benchmark 的 p95 门槛改成了 30ms"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-daily-write",
+      "messageId": "msg-dw-002",
+      "text": "今天还剩什么待办"
+    }
+  ],
+  "expectation": {
+    "intent": "not_memory",
+    "expectedWrites": [
+      "30ms"
+    ],
+    "recalledItemTitles": [
+      "30ms"
+    ],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

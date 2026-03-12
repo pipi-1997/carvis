@@ -29,6 +29,8 @@ describe("runtime harness", () => {
     expect(config.workspaceResolver.registry.main).toBe(join(harness.paths.managedWorkspaceRoot, "main"));
     expect(existsSync(join(harness.paths.templateDir, ".gitignore"))).toBe(true);
     expect(existsSync(join(harness.paths.templateDir, "AGENTS.md"))).toBe(true);
+    expect(existsSync(join(harness.paths.templateDir, ".carvis", "MEMORY.md"))).toBe(true);
+    expect(existsSync(join(harness.paths.templateDir, ".carvis", "memory", "README.md"))).toBe(true);
     expect(harness.env.FEISHU_APP_ID).toBe("cli_test_app");
     expect(harness.env.POSTGRES_URL).toContain("carvis_test");
   });

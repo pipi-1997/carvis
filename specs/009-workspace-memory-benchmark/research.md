@@ -44,18 +44,31 @@
   - 捕获所有 `RunEvent` 和 presentation events：信息更全，但会放大 fixture 和 scorer 复杂度。
   - 仅保留最终 pass/fail：定位失败时信息不足。
 
-## 决策 5：红线 gate 先固定在误写、旧事实污染和 durable recall 漏召回
+## 决策 5：gate 必须同时约束效果正确性和热路径成本
 
-- **Decision**: 第一阶段 gate 以 `false_write_rate`、`stale_recall_rate`、`missed_durable_recall_rate` 为红线，并补充 `recall_hit_rate` 与 `augmentation_token_ratio` 等辅助阈值。
+- **Decision**: 第一阶段 gate 以 `false_write_rate`、`stale_recall_rate`、`missed_durable_recall_rate` 为正确性红线，同时增加 `preflight_latency_ms_p95`、`files_scanned_per_sync_p95`、`tool_call_count_p95` 这三类热路径成本红线，并保留 `recall_hit_rate` 与 `augmentation_token_ratio` 作为辅助阈值。
 - **Rationale**:
   - 误写 durable memory 和旧事实污染是 memory 系统最危险的两类错误，一旦放过会快速破坏用户信任。
   - durable recall 漏召回则直接削弱这套系统存在的意义。
-  - 成本指标必须记录，但第一阶段应优先服务“质量不能抽卡”这一核心目标。
+  - 社区方案对比表明，仅看效果会误放过“需要频繁工具读写或扫描大量文件”的方案；这些方案在真实交互中会因为延迟和成本失控而不可落地。
+  - 因此 benchmark 不能只统计成本，而要把最关键的热路径成本直接升格为 gate。
 - **Alternatives considered**:
   - 先只看平均准确率：会掩盖最有害的长尾错误。
   - 先只看成本：无法说明 memory 设计本身是否有效。
+  - 只记录成本不设 gate：会导致“效果漂亮但调用风暴”的方案被误判为可上线。
 
-## 决策 6：benchmark 不替代契约测试，而是作为 rollout gate 叠加存在
+## 决策 6：fixture 需要覆盖 repeated recall、large curated memory 与 tool retry 压力场景
+
+- **Decision**: 在 `L2-replay` / `L3-adversarial` 中补充 repeated recall、large curated memory、long-horizon memory growth、update-then-repeated-recall、tool retry read session 等场景。
+- **Rationale**:
+  - 社区 memory 方案的差异，往往不是在单次命中上，而是在多轮交互和记忆增长后的热路径行为上。
+  - 这类样例能更快揭露“每轮都重扫大量文件”“每轮多次工具重读”“更新后旧事实仍被重复召回”这类问题。
+  - benchmark 需要对这些方案保持诚实失败，而不是只在最小 golden 语料上看起来通过。
+- **Alternatives considered**:
+  - 只在 golden 中维持最小语料：更简单，但对方案优劣的区分度不足。
+  - 直接依赖线上真实 replay：更真实，但不稳定也不便于持续回归。
+
+## 决策 7：benchmark 不替代契约测试，而是作为 rollout gate 叠加存在
 
 - **Decision**: benchmark 与现有 contract/integration 测试并存，分别承担“接口/运行语义正确性”和“memory 质量门禁”两种职责。
 - **Rationale**:

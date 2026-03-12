@@ -75,8 +75,8 @@
 - **FR-002**: System MUST 使用标准化 benchmark 样例表达输入消息序列、作用 workspace、期望分类结果、期望召回结果以及禁止出现的结果。
 - **FR-003**: System MUST 为每条 benchmark 样例生成结构化评测产物，至少包含分类结果、durable write 摘要、recall 命中摘要、bridge request 摘要、用户可见结果、运行结局、判分结果和失败原因。
 - **FR-004**: System MUST 为 benchmark 计算聚合效果指标，至少覆盖 intent classification 正确性、误写率、召回命中率、旧事实污染率和 `/new` 后 durable recall 命中情况。
-- **FR-005**: System MUST 为 benchmark 计算聚合成本指标，至少覆盖分类耗时、recall 耗时、memory preflight 耗时、augmentation token 规模、augmentation token 占比、同步扫描开销以及这些指标的 P50/P95 聚合。
-- **FR-006**: System MUST 支持将 benchmark 样例按用途划分为 golden、replay 和 adversarial 三类，并允许先以 golden 作为主 gate。
+- **FR-005**: System MUST 为 benchmark 计算聚合成本指标，至少覆盖分类耗时、recall 耗时、memory preflight 耗时、augmentation token 规模、augmentation token 占比、同步扫描开销，以及工具热路径调用次数（总调用、读调用、写调用）的 P50/P95 聚合。
+- **FR-006**: System MUST 支持将 benchmark 样例按用途划分为 golden、replay 和 adversarial 三类，并允许在 replay / adversarial 中加入 repeated recall、large curated memory、长程记忆增长、tool retry 等压力样例。
 - **FR-007**: System MUST 对 benchmark 结果执行 gate 判断，并明确指出哪些红线指标阻止继续扩大自动记忆能力；第一阶段必须至少提供一套默认 Gate Profile。
 - **FR-008**: System MUST 支持开发者在不依赖真实线上消息流的情况下新增或修改 benchmark 样例，并再次运行整套评测。
 - **FR-009**: System MUST 将“普通聊天不得被误写入 durable memory”作为第一阶段 benchmark 的硬性判分条件之一。
@@ -87,6 +87,7 @@
 - **OR-001**: System MUST 定义 benchmark 报告中的 operator-visible 状态，包括案例通过/失败、suite 汇总结果、gate 是否通过以及阻断 rollout 的具体原因。
 - **OR-002**: System MUST 说明 benchmark 与真实运行路径的边界，避免 operator 将离线 benchmark 通过误解为线上运行链路已经完全无风险。
 - **OR-003**: System MUST 记录与 memory 评测相关的关键耗时和扫描规模，使 operator 可以判断 recall 或 sync 成本是否已接近不可接受范围。
+- **OR-005**: System MUST 让 operator 从 benchmark 报告中直接看到热路径工具调用规模，避免某些“效果看似达标但调用风暴不可接受”的方案误过门禁。
 - **OR-004**: System MUST 在 benchmark 涉及 queue、lock、heartbeat 相关路径时明确这些信号是来自真实运行复用还是受控测试替身，并在报告或操作文档中可见，以避免误读。
 
 ### 关键实体 *(涉及数据时填写)*
@@ -95,7 +96,7 @@
 - **Benchmark Expectation**: 表示某条样例的 gold expectation，包括应识别的 memory intent、应命中的 durable memory，以及不得出现的写入或召回结果。
 - **Benchmark Trace**: 表示执行样例后采集到的结构化运行轨迹，用于支撑效果判分和成本统计。
 - **Benchmark Report**: 表示单条样例或整套样例的评测结果，包含通过状态、失败原因、聚合指标和 gate 结论。
-- **Gate Profile**: 表示 benchmark 使用的阈值集合，定义哪些效果和成本指标是 rollout 的硬门槛。
+- **Gate Profile**: 表示 benchmark 使用的阈值集合，定义哪些效果和成本指标是 rollout 的硬门槛，至少包括误写/旧事实污染/漏召回，以及 preflight 延迟、扫描文件数和工具调用上限。
 
 ## 假设
 
@@ -112,3 +113,4 @@
 - **SC-003**: golden 样例集中所有“旧事实已失效”的案例旧事实污染率为 0。
 - **SC-004**: golden 样例集中关键 recall 场景的 durable recall 命中率达到 95% 及以上。
 - **SC-005**: benchmark 报告能够明确给出是否允许继续扩大自动记忆范围的结论，并指出触发阻断的具体指标。
+- **SC-006**: benchmark 必须能区分“效果正确但热路径成本过高”的方案，并在 `preflightLatencyMsP95`、`filesScannedPerSyncP95` 或 `toolCallCountP95` 超限时明确阻断 rollout。

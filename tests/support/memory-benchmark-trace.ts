@@ -14,6 +14,27 @@ type HarnessLike = {
       workspace: string;
       sessionMode: string;
     }>;
+    memoryWriteObservations?: Array<{
+      targetPath: string;
+      changeType: "long_term" | "daily";
+      changed: boolean;
+      summary: string;
+    }>;
+    manualEditPaths?: string[];
+    memoryFlushObservation?: {
+      triggered: boolean;
+      changed: boolean;
+      targetPath: string | null;
+      writeCount: number;
+    };
+    memoryExcerpt?: {
+      excerptText: string;
+      sources: string[];
+      selectedSections: string[];
+      approxTokens: number;
+    };
+    preflightLatencyMs?: number;
+    filesScanned?: number;
     userVisibleOutputs: Array<{
       kind: string;
       content: string;
@@ -39,6 +60,20 @@ export function createMemoryBenchmarkTrace(input: {
     classification: input.classification ?? "not_memory",
     writes: input.writes ?? [],
     recalls: input.recalls ?? [],
+    manualEditPaths: input.harness.memoryBenchmarkTrace?.manualEditPaths ?? [],
+    memoryWriteObservations: input.harness.memoryBenchmarkTrace?.memoryWriteObservations ?? [],
+    memoryFlushObservation: input.harness.memoryBenchmarkTrace?.memoryFlushObservation ?? {
+      triggered: false,
+      changed: false,
+      targetPath: null,
+      writeCount: 0,
+    },
+    memoryExcerpt: input.harness.memoryBenchmarkTrace?.memoryExcerpt ?? {
+      excerptText: "",
+      sources: [],
+      selectedSections: [],
+      approxTokens: 0,
+    },
     bridgeRequests:
       input.harness.memoryBenchmarkTrace?.bridgeRequests
       ?? input.harness.bridgeRequests.map((request) => ({

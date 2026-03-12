@@ -58,12 +58,22 @@
 - `augmentationTokensP50`
 - `augmentationTokensP95`
 - `augmentationTokenRatioP95`
+- `preflightLatencyMsP50`
+- `preflightLatencyMsP95`
+- `filesScannedPerSyncP95`
+- `toolCallCountP50`
+- `toolCallCountP95`
+- `toolReadCountP50`
+- `toolReadCountP95`
+- `toolWriteCountP50`
+- `toolWriteCountP95`
 
 ## Gate 语义
 
 1. 当 `falseWriteRate` 或 `staleRecallRate` 超出红线时，`globalGateResult` 必须为失败。
 2. 当关键 recall 样例命中率低于门槛时，报告必须说明是哪些案例拖低了指标。
-3. 即使成本指标通过，若红线效果指标失败，也不得给出继续 rollout 的正向建议。
+3. 当 `preflightLatencyMsP95`、`filesScannedPerSyncP95` 或 `toolCallCountP95` 超出默认门槛时，即使效果指标通过，也必须阻断 rollout。
+4. 即使成本指标通过，若红线效果指标失败，也不得给出继续 rollout 的正向建议。
 
 ## 示例结论
 

@@ -20,6 +20,7 @@ import {
   type RuntimeRedisClient,
 } from "./redis-client.ts";
 import { RedisWorkspaceLockManager } from "./workspace-lock.ts";
+import { ensureWorkspaceTemplateScaffold } from "./workspace-template.ts";
 import type { CancelSignalDriver } from "./cancel-signal.ts";
 import type { HeartbeatDriver } from "./heartbeat.ts";
 import type { QueueDriver } from "./queue.ts";
@@ -94,6 +95,7 @@ export async function createRuntimeServices<
 ): Promise<RuntimeServices<TPostgresClient, TRedisClient>> {
   const dependencies = await createRuntimeDependencies(options);
 
+  await ensureWorkspaceTemplateScaffold(dependencies.config.workspaceResolver.templatePath);
   await runPostgresMigrations(dependencies.postgres);
 
   return {

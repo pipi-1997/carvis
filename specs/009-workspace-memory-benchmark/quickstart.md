@@ -17,7 +17,7 @@
 3. 扩展 `tests/support/harness.ts` 以输出 benchmark trace
 4. 实现 runner、scorer 和 gate evaluator
 5. 为 trace 增加分类、写入、召回、用户可见结果和成本工件
-6. 补充 golden / replay / adversarial 样例
+6. 补充 golden / replay / adversarial 样例，尤其是 repeated recall、large curated memory、长程增长与 tool retry 压力场景
 7. 添加脚本命令、gate 输出和 operator 可读说明
 
 ## 4. 建议运行方式
@@ -56,7 +56,7 @@ bun run lint
 - benchmark 可以输出每条样例的 pass/fail 和失败原因
 - benchmark 可以输出 suite 级和全局级指标
 - benchmark 可以输出成本指标的 P50/P95 聚合
-- `false_write_rate`、`stale_recall_rate`、`missed_durable_recall_rate` 可被 gate 使用
+- `false_write_rate`、`stale_recall_rate`、`missed_durable_recall_rate`、`preflight_latency_ms_p95`、`files_scanned_per_sync_p95`、`tool_call_count_p95` 可被 gate 使用
 - 文档或报告可以说明 queue、lock、heartbeat 等信号是来自真实运行复用还是测试替身
 - `bun run test:memory-benchmark` 应返回全部 benchmark contract/integration 测试通过
 - `bun run test:memory-benchmark:gate` 当前与 benchmark 套件对齐，用于 CI 或 rollout gate 检查
@@ -66,4 +66,5 @@ bun run lint
 - 若某条样例无法判分，先检查 fixture 是否缺失 `expectation`
 - 若 recall 相关 case 全部失败，先检查 trace 是否捕获到实际 recall 结果
 - 若成本指标缺失，先检查 runner 是否记录了 token 和 latency 相关工件
+- 若热路径成本门禁异常通过，先检查 trace 是否真实记录了工具调用计数和扫描文件数
 - 若 operator 无法判断信号来源，先检查报告或 quickstart 是否标明了 test double 与真实运行复用的边界

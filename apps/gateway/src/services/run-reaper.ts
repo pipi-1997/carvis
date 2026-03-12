@@ -5,6 +5,7 @@ export function createRunReaper(input: {
   heartbeats: HeartbeatDriver;
   queue: QueueDriver;
   workspaceLocks: WorkspaceLockDriver;
+  logger?: ReturnType<typeof import("@carvis/core").createRuntimeLogger>;
   notifier: {
     notifyRunEvent(session: { chatId: string } | null, event: RunEvent): Promise<void>;
   };
@@ -26,6 +27,12 @@ export function createRunReaper(input: {
 
         const failedAt = now().toISOString();
         await input.repositories.runs.markRunFailed(runId, failedAt, "heartbeat_expired", "executor heartbeat expired");
+        input.logger?.workspaceMemoryState("failed", {
+          runId,
+          workspace: run.workspace,
+          failureCode: "heartbeat_expired",
+          failureMessage: "executor heartbeat expired",
+        });
         const event = await input.repositories.events.appendEvent({
           runId,
           eventType: "run.failed",

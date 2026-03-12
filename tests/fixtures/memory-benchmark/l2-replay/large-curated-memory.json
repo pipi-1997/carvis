@@ -1,0 +1,52 @@
+{
+  "id": "replay-large-curated-memory",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-large",
+      "messageId": "msg-701",
+      "text": "/remember 本项目统一使用 bun"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-large",
+      "messageId": "msg-702",
+      "text": "/remember 默认先给结论再给细节"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-large",
+      "messageId": "msg-703",
+      "text": "/remember Web 框架使用 Hono"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-large",
+      "messageId": "msg-704",
+      "text": "/remember Node 版本统一 20"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-large",
+      "messageId": "msg-705",
+      "text": "现在给我启动建议"
+    }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": [
+      "bun",
+      "默认先给结论再给细节",
+      "Web 框架使用 Hono",
+      "Node 版本统一 20"
+    ],
+    "recalledItemTitles": [
+      "bun",
+      "默认先给结论再给细节"
+    ],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

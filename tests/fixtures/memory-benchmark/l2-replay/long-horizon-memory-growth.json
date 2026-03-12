@@ -1,0 +1,23 @@
+{
+  "id": "replay-long-horizon-memory-growth",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-901", "text": "/remember 本项目统一使用 bun" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-902", "text": "/remember 默认先给结论再给细节" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-903", "text": "/remember Web 框架使用 Hono" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-904", "text": "/remember Node 版本统一 20" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-905", "text": "/remember Postgres 是 durable state" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-906", "text": "/remember Redis 只做 coordination" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-907", "text": "/remember 同一 workspace 只允许一个 active run" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-908", "text": "/remember /status 需要展示 durable memory 摘要" },
+    { "role": "user", "chatId": "chat-growth", "messageId": "msg-909", "text": "现在给我启动建议" }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": ["bun", "默认先给结论再给细节"],
+    "recalledItemTitles": ["bun", "默认先给结论再给细节"],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

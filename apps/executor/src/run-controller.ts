@@ -3,6 +3,19 @@ import type { CodexBridge } from "@carvis/bridge-codex";
 
 import { GatewayToolClientError } from "./gateway-tool-client.ts";
 import { renewRunHeartbeat } from "./heartbeat.ts";
+import { buildWorkspaceMemoryGuidance } from "./services/workspace-memory-guidance.ts";
+import {
+  captureWorkspaceMemoryState,
+  loadWorkspaceMemoryContext,
+  observeWorkspaceMemoryWrites,
+} from "./services/workspace-memory.ts";
+import {
+  resolveWorkspaceMemoryFlushPlan,
+  shouldTriggerWorkspaceMemoryFlush,
+} from "./services/workspace-memory-flush.ts";
+
+const MEMORY_FLUSH_PROMPT_THRESHOLD_CHARS = 400;
+const ORIGINAL_USER_PROMPT_MARKER = "Original user request JSON: ";
 
 export function createRunController(input: {
   agentConfig: AgentConfig;
@@ -36,20 +49,115 @@ export function createRunController(input: {
       let requestSessionMode = run.requestedSessionMode;
       let requestBridgeSessionId = run.requestedBridgeSessionId;
       let recoveryAttempted = false;
+      const memoryEligible = run.triggerSource === "chat_message";
 
-      const cancelWatcher = input.cancelSignals.waitForCancellation(run.id).then(async () => {
-        await input.bridge.cancelRun(run.id);
-      });
+      let cancelWatcherActive = true;
+      const cancelWatcher = (async () => {
+        while (cancelWatcherActive) {
+          if (await input.cancelSignals.isCancellationRequested(run.id)) {
+            await input.bridge.cancelRun(run.id);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      })();
 
       try {
         while (true) {
+          const startedAtMs = now().getTime();
+          let beforeMemoryState = await captureWorkspaceMemoryState({
+            workspacePath: run.workspace,
+            now: now(),
+          });
+          const priorSessionRunCount = memoryEligible && run.sessionId
+            ? (await input.repositories.runs.listRuns()).filter(
+              (candidate) => candidate.sessionId === run.sessionId && candidate.id !== run.id,
+            ).length
+            : 0;
+          const flushPromptText = extractOriginalUserPrompt(run.prompt);
+          const shouldFlush = memoryEligible && shouldTriggerWorkspaceMemoryFlush({
+            nearCompaction:
+              priorSessionRunCount > 0 && flushPromptText.length >= MEMORY_FLUSH_PROMPT_THRESHOLD_CHARS,
+            alreadyFlushed: false,
+            cancelled: false,
+            timedOut: false,
+          });
+          if (shouldFlush) {
+            const flushPlan = resolveWorkspaceMemoryFlushPlan({
+              workspacePath: run.workspace,
+              now: now(),
+            });
+            const flushHandle = await input.bridge.startRun({
+              id: `${run.id}:memory-flush`,
+              sessionId: run.sessionId,
+              agentId: run.agentId,
+              workspace: run.workspace,
+              prompt: `Pre-compaction memory flush. Store durable memories in ${flushPlan.targetPath}. If nothing should be persisted, reply NO_REPLY.`,
+              triggerMessageId: run.triggerMessageId,
+              triggerUserId: run.triggerUserId,
+              timeoutSeconds: run.timeoutSeconds,
+              bridgeSessionId: requestBridgeSessionId,
+              sessionMode: requestSessionMode,
+              createdAt: run.createdAt,
+            });
+            for await (const flushEvent of flushHandle.streamEvents()) {
+              if (
+                flushEvent.eventType === "run.completed"
+                || flushEvent.eventType === "run.failed"
+                || flushEvent.eventType === "run.cancelled"
+              ) {
+                break;
+              }
+            }
+            const afterFlushState = await captureWorkspaceMemoryState({
+              workspacePath: run.workspace,
+              now: now(),
+            });
+            const flushWrites = observeWorkspaceMemoryWrites({
+              before: beforeMemoryState,
+              after: afterFlushState,
+            });
+            input.logger?.workspaceMemoryState("flush", {
+              runId: run.id,
+              workspace: run.workspace,
+              targetPath: flushPlan.targetPath,
+              changed: flushWrites.length > 0,
+              writeCount: flushWrites.length,
+            });
+            beforeMemoryState = afterFlushState;
+          }
+          const memoryContext = memoryEligible
+            ? await loadWorkspaceMemoryContext({
+              workspacePath: run.workspace,
+              now: now(),
+            })
+            : null;
+          const memoryGuidance = memoryEligible
+            ? buildWorkspaceMemoryGuidance({
+              excerpt: memoryContext,
+            })
+            : null;
+          const augmentedPrompt = memoryGuidance ? `${memoryGuidance.promptPrefix}${run.prompt}` : run.prompt;
+          if (memoryContext) {
+            input.logger?.workspaceMemoryState("preflight", {
+              runId: run.id,
+              workspace: run.workspace,
+              filesScanned: memoryContext.filesScanned,
+              sources: memoryContext.sources,
+              selectedSections: memoryContext.selectedSections,
+              excerptText: memoryContext.excerptText,
+              augmentationChars: memoryContext.excerptText.length,
+              preflightLatencyMs: Math.max(0, now().getTime() - startedAtMs),
+            });
+          }
+
           const handle = await input.bridge.startRun({
             id: run.id,
             sessionId: run.sessionId,
             chatId: session?.chatId ?? null,
             agentId: run.agentId,
             workspace: run.workspace,
-            prompt: run.prompt,
+            prompt: augmentedPrompt,
             triggerMessageId: run.triggerMessageId,
             triggerUserId: run.triggerUserId,
             timeoutSeconds: run.timeoutSeconds,
@@ -70,6 +178,18 @@ export function createRunController(input: {
               const failureCode = String(event.payload.failure_code ?? "run_failed");
               const failureMessage = String(event.payload.failure_message ?? "run failed");
               const sessionInvalid = event.payload.session_invalid === true;
+              const afterMemoryState = memoryEligible
+                ? await captureWorkspaceMemoryState({
+                  workspacePath: run.workspace,
+                  now: now(),
+                })
+                : beforeMemoryState;
+              const memoryWrites = memoryEligible
+                ? observeWorkspaceMemoryWrites({
+                  before: beforeMemoryState,
+                  after: afterMemoryState,
+                })
+                : [];
 
               if (sessionInvalid && requestSessionMode === "continuation" && !recoveryAttempted) {
                 recoveryAttempted = true;
@@ -98,6 +218,13 @@ export function createRunController(input: {
                 eventType: event.eventType,
                 payload: event.payload,
                 now: now(),
+              });
+              input.logger?.workspaceMemoryState("failed", {
+                runId: run.id,
+                workspace: run.workspace,
+                failureCode,
+                failureMessage,
+                writeCount: memoryWrites.length,
               });
               if (recoveryAttempted) {
                 if (session) {
@@ -198,6 +325,32 @@ export function createRunController(input: {
             }
 
             if (event.eventType === "run.completed") {
+              if (memoryEligible) {
+                const afterMemoryState = await captureWorkspaceMemoryState({
+                  workspacePath: run.workspace,
+                  now: now(),
+                });
+                const memoryWrites = observeWorkspaceMemoryWrites({
+                  before: beforeMemoryState,
+                  after: afterMemoryState,
+                });
+                for (const observation of memoryWrites) {
+                  input.logger?.workspaceMemoryState("write", {
+                    runId: run.id,
+                    workspace: run.workspace,
+                    targetPath: observation.targetPath,
+                    changeType: observation.changeType,
+                    createdFile: observation.createdFile,
+                    summary: observation.summary,
+                  });
+                }
+                if (memoryWrites.length === 0) {
+                  input.logger?.workspaceMemoryState("noop", {
+                    runId: run.id,
+                    workspace: run.workspace,
+                  });
+                }
+              }
               const resolvedBridgeSessionId =
                 typeof event.payload.bridge_session_id === "string" ? event.payload.bridge_session_id : null;
               const silentContinuationRecovery =
@@ -260,6 +413,11 @@ export function createRunController(input: {
             }
 
             if (event.eventType === "run.cancelled") {
+              input.logger?.workspaceMemoryState("cancelled", {
+                runId: run.id,
+                workspace: run.workspace,
+                reason: String(event.payload.reason ?? "cancel requested"),
+              });
               await input.repositories.runs.markRunCancelled(
                 run.id,
                 now().toISOString(),
@@ -294,6 +452,12 @@ export function createRunController(input: {
         const failureCode = error instanceof GatewayToolClientError
           ? error.failureCode
           : "bridge_error";
+        input.logger?.workspaceMemoryState("failed", {
+          runId: run.id,
+          workspace: run.workspace,
+          failureCode,
+          failureMessage,
+        });
         if (recoveryAttempted) {
           if (session) {
             await input.repositories.conversationSessionBindings.markBindingInvalidated({
@@ -343,10 +507,26 @@ export function createRunController(input: {
         }
         await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, failedEvent);
       } finally {
-        void cancelWatcher;
+        cancelWatcherActive = false;
+        await Promise.race([cancelWatcher, Promise.resolve()]);
         await input.heartbeats.clear(run.id);
         await input.cancelSignals.clear(run.id);
       }
     },
   };
+}
+
+function extractOriginalUserPrompt(prompt: string) {
+  const markerIndex = prompt.indexOf(ORIGINAL_USER_PROMPT_MARKER);
+  if (markerIndex < 0) {
+    return prompt;
+  }
+
+  const encodedPrompt = prompt.slice(markerIndex + ORIGINAL_USER_PROMPT_MARKER.length).trim();
+  try {
+    const parsedPrompt = JSON.parse(encodedPrompt) as unknown;
+    return typeof parsedPrompt === "string" ? parsedPrompt : prompt;
+  } catch {
+    return prompt;
+  }
 }

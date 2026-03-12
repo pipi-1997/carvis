@@ -11,5 +11,8 @@ describe("memory benchmark runner contract", () => {
     expect(report.caseCount).toBeGreaterThan(0);
     expect(report.metrics.augmentationTokenRatioP95).toBeDefined();
     expect(report.metrics.recallHitRate).toBeDefined();
+    expect(report.metrics.preflightLatencyMsP95).toBeDefined();
+    expect(report.metrics.filesScannedPerSyncP95).toBeDefined();
+    expect(report.metrics.toolCallCountP95).toBeDefined();
   });
 });

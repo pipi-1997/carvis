@@ -29,6 +29,27 @@ describe("memory benchmark models", () => {
       classification: "remember",
       writes: ["bun"],
       recalls: ["bun"],
+      manualEditPaths: [],
+      memoryWriteObservations: [
+        {
+          targetPath: ".carvis/MEMORY.md",
+          changeType: "long_term",
+          changed: true,
+          summary: "updated long-term workspace memory",
+        },
+      ],
+      memoryFlushObservation: {
+        triggered: false,
+        changed: false,
+        targetPath: null,
+        writeCount: 0,
+      },
+      memoryExcerpt: {
+        excerptText: "bun",
+        sources: [".carvis/MEMORY.md"],
+        selectedSections: ["MEMORY.md"],
+        approxTokens: 1,
+      },
       bridgeRequests: [],
       userVisibleOutputs: [],
       runtimeOutcome: "completed",
@@ -44,10 +65,15 @@ describe("memory benchmark models", () => {
         augmentationTokens: 61,
         augmentationTokenRatio: 0.12,
         filesScannedPerSync: 0,
+        toolCallCount: 0,
+        toolReadCount: 0,
+        toolWriteCount: 1,
       },
     };
 
     expect(benchmarkCase.expectation.intent).toBe("remember");
     expect(trace.metrics.augmentationTokens).toBeGreaterThan(0);
+    expect(trace.memoryWriteObservations[0]?.changeType).toBe("long_term");
+    expect(trace.memoryFlushObservation.triggered).toBeFalse();
   });
 });

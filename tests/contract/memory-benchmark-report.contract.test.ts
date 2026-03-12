@@ -12,6 +12,9 @@ describe("memory benchmark report contract", () => {
         missedDurableRecallRate: 0,
         recallHitRate: 1,
         augmentationTokenRatioP95: 0.1,
+        preflightLatencyMsP95: 10,
+        filesScannedPerSyncP95: 2,
+        toolCallCountP95: 0,
       },
     });
 

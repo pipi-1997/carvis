@@ -1,4 +1,4 @@
-import type { AgentConfig, RepositoryBundle, RunEvent } from "@carvis/core";
+import type { AgentConfig, CancelSignalDriver, RepositoryBundle, RunEvent } from "@carvis/core";
 import type { QueueDriver, WorkspaceLockDriver } from "@carvis/core";
 
 import { createRunController } from "./run-controller.ts";
@@ -6,6 +6,7 @@ import { createRunController } from "./run-controller.ts";
 export function createRunConsumer(input: {
   agentConfig: AgentConfig;
   repositories: RepositoryBundle;
+  cancelSignals: CancelSignalDriver;
   queue: QueueDriver;
   workspaceLocks: WorkspaceLockDriver;
   runController: ReturnType<typeof createRunController>;
@@ -78,6 +79,40 @@ export function createRunConsumer(input: {
             now: now(),
           });
           await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, startedEvent);
+          if (await input.cancelSignals.isCancellationRequested(run.id)) {
+            const cancelledEvent = await input.repositories.events.appendEvent({
+              runId: run.id,
+              eventType: "run.cancelled",
+              payload: {
+                run_id: run.id,
+                cancelled_at: now().toISOString(),
+                reason: "cancel requested",
+              },
+              now: now(),
+            });
+            await input.repositories.runs.markRunCancelled(
+              run.id,
+              now().toISOString(),
+              "cancel requested",
+            );
+            if (run.triggerExecutionId) {
+              const execution = await input.repositories.triggerExecutions.updateExecution({
+                executionId: run.triggerExecutionId,
+                status: "cancelled",
+                failureCode: "cancelled",
+                failureMessage: "cancel requested",
+                finishedAt: now().toISOString(),
+                now: now(),
+              });
+              await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+                definitionId: execution.definitionId,
+                lastTriggerStatus: "cancelled",
+                now: now(),
+              });
+            }
+            await input.notifier.notifyRunEvent(session ? { chatId: session.chatId } : null, cancelledEvent);
+            return true;
+          }
           await input.runController.execute(run);
           return true;
         } finally {

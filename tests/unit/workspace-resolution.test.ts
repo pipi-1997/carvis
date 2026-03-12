@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -130,6 +130,8 @@ describe("workspace resolution", () => {
     expect(created.templateRef).toBe(templatePath);
     const catalogEntry = await repositories.workspaceCatalog.getEntryByWorkspaceKey("feature-a");
     expect(catalogEntry?.workspacePath).toBe(join(managedWorkspaceRoot, "feature-a"));
+    expect(existsSync(join(managedWorkspaceRoot, "feature-a", ".carvis", "MEMORY.md"))).toBe(true);
+    expect(existsSync(join(managedWorkspaceRoot, "feature-a", ".carvis", "memory", "README.md"))).toBe(true);
     rmSync(tempRoot, { recursive: true, force: true });
   });
 

@@ -1,0 +1,48 @@
+{
+  "id": "replay-repeated-recall-session",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-repeat",
+      "messageId": "msg-601",
+      "text": "/remember 本项目统一使用 bun"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-repeat",
+      "messageId": "msg-602",
+      "text": "怎么启动这个项目"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-repeat",
+      "messageId": "msg-603",
+      "text": "测试命令是什么"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-repeat",
+      "messageId": "msg-604",
+      "text": "依赖怎么安装"
+    },
+    {
+      "role": "user",
+      "chatId": "chat-repeat",
+      "messageId": "msg-605",
+      "text": "CI 应该怎么跑"
+    }
+  ],
+  "expectation": {
+    "intent": "remember",
+    "expectedWrites": [
+      "bun"
+    ],
+    "recalledItemTitles": [
+      "bun"
+    ],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

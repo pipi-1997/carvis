@@ -1,0 +1,22 @@
+{
+  "id": "replay-pre-compaction-flush",
+  "suite": "L2-replay",
+  "workspaceKey": "main",
+  "transcript": [
+    {
+      "role": "user",
+      "chatId": "chat-flush",
+      "messageId": "msg-flush-001",
+      "text": "请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。请保留这些重要内容，后面压缩前不要丢。"
+    }
+  ],
+  "expectation": {
+    "intent": "not_memory",
+    "expectedWrites": [
+      "flushed durable session note"
+    ],
+    "recalledItemTitles": [],
+    "forbiddenItemTitles": [],
+    "gateCritical": false
+  }
+}

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { createRuntimeServices } from "@carvis/core";
 
@@ -62,6 +64,8 @@ describe("runtime services", () => {
     expect(services.workspaceLocks).toBeDefined();
     expect(services.heartbeats).toBeDefined();
     expect(services.cancelSignals).toBeDefined();
+    expect(existsSync(join(harness.paths.templateDir, ".carvis", "MEMORY.md"))).toBe(true);
+    expect(existsSync(join(harness.paths.templateDir, ".carvis", "memory", "README.md"))).toBe(true);
     expect(executedSql).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
