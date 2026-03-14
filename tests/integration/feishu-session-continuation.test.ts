@@ -90,4 +90,57 @@ describe("Feishu session continuation", () => {
     );
     expect(secondBinding?.bridgeSessionId).toBe("thread-chat-002");
   });
+
+  test("sandbox mode 变化后下一条消息会强制 fresh，不跨 mode 续聊", async () => {
+    const transport: CodexTransport = {
+      async *run(request) {
+        yield {
+          type: "result",
+          resultSummary: request.resolvedSandboxMode ?? "unknown",
+          bridgeSessionId: request.resolvedSandboxMode === "danger-full-access" ? "thread-danger" : "thread-default",
+          sessionOutcome: "created",
+        };
+      },
+    };
+    const harness = createHarness({ transport });
+
+    await harness.postFeishuText("先建立默认上下文", {
+      chat_id: "chat-mode-switch",
+      message_id: "msg-001",
+      user_id: "user-001",
+    });
+    await harness.executor.processNext();
+
+    await harness.postFeishuText("/mode danger-full-access", {
+      chat_id: "chat-mode-switch",
+      message_id: "msg-002",
+      user_id: "user-001",
+    });
+    await harness.postFeishuText("切到高权限后继续", {
+      chat_id: "chat-mode-switch",
+      message_id: "msg-003",
+      user_id: "user-001",
+    });
+    await harness.executor.processNext();
+
+    expect(harness.bridgeRequests.map((request) => ({
+      messageId: request.triggerMessageId,
+      sessionMode: request.sessionMode ?? "fresh",
+      bridgeSessionId: request.bridgeSessionId ?? null,
+      resolvedSandboxMode: request.resolvedSandboxMode ?? null,
+    }))).toEqual([
+      {
+        messageId: "msg-001",
+        sessionMode: "fresh",
+        bridgeSessionId: null,
+        resolvedSandboxMode: "workspace-write",
+      },
+      {
+        messageId: "msg-003",
+        sessionMode: "fresh",
+        bridgeSessionId: null,
+        resolvedSandboxMode: "danger-full-access",
+      },
+    ]);
+  });
 });

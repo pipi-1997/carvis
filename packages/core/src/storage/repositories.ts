@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AgentConfig,
+  ChatSandboxOverride,
   ConversationSessionBinding,
   ConversationSessionBindingStatus,
   ConversationSessionRecoveryResult,
+  CodexSandboxMode,
   DeliveryKind,
   DeliveryStatus,
   EffectiveManagedSchedule,
@@ -17,6 +19,7 @@ import type {
   ScheduleManagementAction,
   ScheduleManagementActionType,
   ScheduleManagementResolutionStatus,
+  SandboxModeSource,
   SessionMode,
   Session,
   SessionWorkspaceBinding,
@@ -94,6 +97,7 @@ export interface ConversationSessionBindingRepository {
     session: Session;
     bridge: AgentConfig["bridge"];
     bridgeSessionId: string;
+    sandboxMode?: CodexSandboxMode;
     workspace?: string;
     status: Extract<ConversationSessionBindingStatus, "bound" | "recovered">;
     recoveryResult?: ConversationSessionRecoveryResult | null;
@@ -109,6 +113,22 @@ export interface ConversationSessionBindingRepository {
     recoveryResult?: ConversationSessionRecoveryResult | null;
     now?: Date;
   }): Promise<ConversationSessionBinding>;
+}
+
+export interface ChatSandboxOverrideRepository {
+  getOverrideBySessionId(sessionId: string): Promise<ChatSandboxOverride | null>;
+  listOverrides(): Promise<ChatSandboxOverride[]>;
+  upsertOverride(input: {
+    sessionId: string;
+    chatId: string;
+    agentId: string;
+    workspace: string;
+    sandboxMode: CodexSandboxMode;
+    expiresAt: string;
+    setByUserId?: string | null;
+    now?: Date;
+  }): Promise<ChatSandboxOverride>;
+  deleteOverrideBySessionId(sessionId: string): Promise<void>;
 }
 
 export interface SessionWorkspaceBindingRepository {
@@ -146,6 +166,9 @@ export interface RunRepository {
     triggerMessageId: string | null;
     triggerUserId: string | null;
     timeoutSeconds: number;
+    requestedSandboxMode?: CodexSandboxMode | null;
+    resolvedSandboxMode?: CodexSandboxMode;
+    sandboxModeSource?: SandboxModeSource;
     requestedSessionMode?: SessionMode;
     requestedBridgeSessionId?: string | null;
     deliveryTarget?: TriggerDeliveryTarget | null;
@@ -319,6 +342,7 @@ export interface TriggerExecutionRepository {
 export interface RepositoryBundle {
   sessions: SessionRepository;
   conversationSessionBindings: ConversationSessionBindingRepository;
+  chatSandboxOverrides: ChatSandboxOverrideRepository;
   sessionWorkspaceBindings: SessionWorkspaceBindingRepository;
   workspaceCatalog: WorkspaceCatalogRepository;
   triggerDefinitions: TriggerDefinitionRepository;
@@ -339,6 +363,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
   const sessions = new Map<string, Session>();
   const sessionsByChat = new Map<string, string>();
   const conversationSessionBindings = new Map<string, ConversationSessionBinding>();
+  const chatSandboxOverrides = new Map<string, ChatSandboxOverride>();
   const sessionWorkspaceBindings = new Map<string, SessionWorkspaceBinding>();
   const workspaceCatalog = new Map<string, WorkspaceCatalogEntry>();
   const triggerDefinitions = new Map<string, TriggerDefinition>();
@@ -399,7 +424,8 @@ export function createInMemoryRepositories(): RepositoryBundle {
     async listBindings() {
       return Array.from(conversationSessionBindings.values()).map(clone);
     },
-    async saveBindingContinuation({ session, bridge, bridgeSessionId, workspace, status, recoveryResult, now }) {
+    async saveBindingContinuation(input) {
+      const { session, bridge, bridgeSessionId, workspace, status, recoveryResult, now, sandboxMode } = input;
       const timestamp = nowIso(now);
       const existing = conversationSessionBindings.get(session.id);
       const binding: ConversationSessionBinding = {
@@ -409,6 +435,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
         workspace: workspace ?? session.workspace,
         bridge,
         bridgeSessionId,
+        sandboxMode: sandboxMode ?? existing?.sandboxMode ?? "workspace-write",
         mode: "continuation",
         status,
         lastBoundAt: timestamp,
@@ -434,6 +461,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
         workspace: session.workspace,
         bridge: session.agentId ? "codex" : "codex",
         bridgeSessionId: null,
+        sandboxMode: null,
         mode: "fresh",
         status: "reset",
         lastBoundAt: existing?.lastBoundAt ?? null,
@@ -459,6 +487,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
         workspace: session.workspace,
         bridge: existing?.bridge ?? "codex",
         bridgeSessionId: null,
+        sandboxMode: null,
         mode: "fresh",
         status: "invalidated",
         lastBoundAt: existing?.lastBoundAt ?? null,
@@ -473,6 +502,35 @@ export function createInMemoryRepositories(): RepositoryBundle {
       };
       conversationSessionBindings.set(session.id, binding);
       return clone(binding);
+    },
+  };
+
+  const chatSandboxOverrideRepository: ChatSandboxOverrideRepository = {
+    async getOverrideBySessionId(sessionId) {
+      return clone(chatSandboxOverrides.get(sessionId) ?? null);
+    },
+    async listOverrides() {
+      return Array.from(chatSandboxOverrides.values()).map(clone);
+    },
+    async upsertOverride(input) {
+      const timestamp = nowIso(input.now);
+      const existing = chatSandboxOverrides.get(input.sessionId);
+      const override: ChatSandboxOverride = {
+        sessionId: input.sessionId,
+        chatId: input.chatId,
+        agentId: input.agentId,
+        workspace: input.workspace,
+        sandboxMode: input.sandboxMode,
+        expiresAt: input.expiresAt,
+        setByUserId: input.setByUserId ?? null,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      chatSandboxOverrides.set(input.sessionId, override);
+      return clone(override);
+    },
+    async deleteOverrideBySessionId(sessionId) {
+      chatSandboxOverrides.delete(sessionId);
     },
   };
 
@@ -746,6 +804,9 @@ export function createInMemoryRepositories(): RepositoryBundle {
         triggerMessageId: input.triggerMessageId,
         triggerUserId: input.triggerUserId,
         timeoutSeconds: input.timeoutSeconds,
+        requestedSandboxMode: input.requestedSandboxMode ?? null,
+        resolvedSandboxMode: input.resolvedSandboxMode ?? input.requestedSandboxMode ?? "workspace-write",
+        sandboxModeSource: input.sandboxModeSource ?? "workspace_default",
         requestedSessionMode: input.requestedSessionMode ?? "fresh",
         requestedBridgeSessionId: input.requestedBridgeSessionId ?? null,
         resolvedBridgeSessionId: null,
@@ -1048,6 +1109,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
   return {
     sessions: sessionRepository,
     conversationSessionBindings: conversationSessionBindingRepository,
+    chatSandboxOverrides: chatSandboxOverrideRepository,
     sessionWorkspaceBindings: sessionWorkspaceBindingRepository,
     workspaceCatalog: workspaceCatalogRepository,
     triggerDefinitions: triggerDefinitionRepository,
@@ -1063,7 +1125,9 @@ export function createInMemoryRepositories(): RepositoryBundle {
 
 export function createPostgresRepositories(client: PostgresClient): RepositoryBundle {
   const selectConversationSessionBindingSql =
-    'SELECT session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt" FROM conversation_session_bindings';
+    'SELECT session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", sandbox_mode AS "sandboxMode", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt" FROM conversation_session_bindings';
+  const selectChatSandboxOverrideSql =
+    'SELECT session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, sandbox_mode AS "sandboxMode", expires_at AS "expiresAt", set_by_user_id AS "setByUserId", created_at AS "createdAt", updated_at AS "updatedAt" FROM chat_sandbox_overrides';
   const selectSessionWorkspaceBindingSql =
     'SELECT session_id AS "sessionId", chat_id AS "chatId", workspace_key AS "workspaceKey", binding_source AS "bindingSource", created_at AS "createdAt", updated_at AS "updatedAt" FROM session_workspace_bindings';
   const selectWorkspaceCatalogSql =
@@ -1079,7 +1143,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
   const selectTriggerExecutionSql =
     'SELECT id, definition_id AS "definitionId", source_type AS "sourceType", status, triggered_at AS "triggeredAt", input_digest AS "inputDigest", run_id AS "runId", delivery_status AS "deliveryStatus", rejection_reason AS "rejectionReason", failure_code AS "failureCode", failure_message AS "failureMessage", finished_at AS "finishedAt", created_at AS "createdAt", updated_at AS "updatedAt" FROM trigger_executions';
   const selectRunSql =
-    'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, management_mode AS "managementMode", trigger_source AS "triggerSource", trigger_execution_id AS "triggerExecutionId", trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", delivery_target AS "deliveryTarget", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
+    'SELECT id, session_id AS "sessionId", agent_id AS "agentId", workspace, status, prompt, management_mode AS "managementMode", trigger_source AS "triggerSource", trigger_execution_id AS "triggerExecutionId", trigger_message_id AS "triggerMessageId", trigger_user_id AS "triggerUserId", timeout_seconds AS "timeoutSeconds", requested_sandbox_mode AS "requestedSandboxMode", resolved_sandbox_mode AS "resolvedSandboxMode", sandbox_mode_source AS "sandboxModeSource", requested_session_mode AS "requestedSessionMode", requested_bridge_session_id AS "requestedBridgeSessionId", resolved_bridge_session_id AS "resolvedBridgeSessionId", session_recovery_attempted AS "sessionRecoveryAttempted", session_recovery_result AS "sessionRecoveryResult", delivery_target AS "deliveryTarget", queue_position AS "queuePosition", started_at AS "startedAt", finished_at AS "finishedAt", failure_code AS "failureCode", failure_message AS "failureMessage", cancel_requested_at AS "cancelRequestedAt", created_at AS "createdAt" FROM agent_runs';
   const selectRunPresentationSql =
     'SELECT run_id AS "runId", session_id AS "sessionId", chat_id AS "chatId", phase, terminal_status AS "terminalStatus", streaming_message_id AS "streamingMessageId", streaming_card_id AS "streamingCardId", streaming_element_id AS "streamingElementId", COALESCE(fallback_terminal_message_id, final_post_message_id) AS "fallbackTerminalMessageId", degraded_reason AS "degradedReason", last_output_sequence AS "lastOutputSequence", last_output_excerpt AS "lastOutputExcerpt", created_at AS "createdAt", updated_at AS "updatedAt" FROM run_presentations';
   const selectOutboundDeliverySql =
@@ -1148,18 +1212,21 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       const result = await client.query<ConversationSessionBinding>(`${selectConversationSessionBindingSql} ORDER BY created_at ASC`);
       return result.rows;
     },
-    async saveBindingContinuation({ session, bridge, bridgeSessionId, workspace, status, recoveryResult, now }) {
+    async saveBindingContinuation(input) {
+      const { session, bridge, bridgeSessionId, workspace, status, recoveryResult, now, sandboxMode: inputSandboxMode } =
+        input;
       const timestamp = nowIso(now);
       const bindingWorkspace = workspace ?? session.workspace;
+      const sandboxMode = inputSandboxMode ?? "workspace-write";
       const result = await client.query<ConversationSessionBinding>(
         `INSERT INTO conversation_session_bindings (
-          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, sandbox_mode, mode, status,
           last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
           last_recovery_at, last_recovery_result, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13,
-          $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14,
+          $15, $16, $17, $18
         )
         ON CONFLICT (session_id) DO UPDATE SET
           chat_id = EXCLUDED.chat_id,
@@ -1167,6 +1234,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           workspace = EXCLUDED.workspace,
           bridge = EXCLUDED.bridge,
           bridge_session_id = EXCLUDED.bridge_session_id,
+          sandbox_mode = EXCLUDED.sandbox_mode,
           mode = EXCLUDED.mode,
           status = EXCLUDED.status,
           last_bound_at = EXCLUDED.last_bound_at,
@@ -1174,7 +1242,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           last_recovery_at = CASE WHEN EXCLUDED.status = 'recovered' THEN EXCLUDED.last_recovery_at ELSE conversation_session_bindings.last_recovery_at END,
           last_recovery_result = COALESCE(EXCLUDED.last_recovery_result, conversation_session_bindings.last_recovery_result),
           updated_at = EXCLUDED.updated_at
-        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", sandbox_mode AS "sandboxMode", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [
           session.id,
           session.chatId,
@@ -1182,6 +1250,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           bindingWorkspace,
           bridge,
           bridgeSessionId,
+          sandboxMode,
           "continuation",
           status,
           timestamp,
@@ -1202,27 +1271,29 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       const timestamp = nowIso(now);
       const result = await client.query<ConversationSessionBinding>(
         `INSERT INTO conversation_session_bindings (
-          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, sandbox_mode, mode, status,
           last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
           last_recovery_at, last_recovery_result, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13,
-          $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14,
+          $15, $16, $17, $18
         )
         ON CONFLICT (session_id) DO UPDATE SET
           bridge_session_id = NULL,
+          sandbox_mode = NULL,
           mode = 'fresh',
           status = 'reset',
           last_reset_at = EXCLUDED.last_reset_at,
           updated_at = EXCLUDED.updated_at
-        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", sandbox_mode AS "sandboxMode", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [
           session.id,
           session.chatId,
           session.agentId,
           session.workspace,
           "codex",
+          null,
           null,
           "fresh",
           "reset",
@@ -1244,16 +1315,17 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
       const timestamp = nowIso(now);
       const result = await client.query<ConversationSessionBinding>(
         `INSERT INTO conversation_session_bindings (
-          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, mode, status,
+          session_id, chat_id, agent_id, workspace, bridge, bridge_session_id, sandbox_mode, mode, status,
           last_bound_at, last_used_at, last_reset_at, last_invalidated_at, last_invalidation_reason,
           last_recovery_at, last_recovery_result, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13,
-          $14, $15, $16, $17
+          $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14,
+          $15, $16, $17, $18
         )
         ON CONFLICT (session_id) DO UPDATE SET
           bridge_session_id = NULL,
+          sandbox_mode = NULL,
           mode = 'fresh',
           status = 'invalidated',
           last_invalidated_at = EXCLUDED.last_invalidated_at,
@@ -1261,13 +1333,14 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           last_recovery_at = COALESCE(EXCLUDED.last_recovery_at, conversation_session_bindings.last_recovery_at),
           last_recovery_result = COALESCE(EXCLUDED.last_recovery_result, conversation_session_bindings.last_recovery_result),
           updated_at = EXCLUDED.updated_at
-        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, bridge, bridge_session_id AS "bridgeSessionId", sandbox_mode AS "sandboxMode", mode, status, last_bound_at AS "lastBoundAt", last_used_at AS "lastUsedAt", last_reset_at AS "lastResetAt", last_invalidated_at AS "lastInvalidatedAt", last_invalidation_reason AS "lastInvalidationReason", last_recovery_at AS "lastRecoveryAt", last_recovery_result AS "lastRecoveryResult", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [
           session.id,
           session.chatId,
           session.agentId,
           session.workspace,
           existing?.bridge ?? "codex",
+          null,
           null,
           "fresh",
           "invalidated",
@@ -1283,6 +1356,56 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         ],
       );
       return result.rows[0];
+    },
+  };
+
+  const chatSandboxOverrides: ChatSandboxOverrideRepository = {
+    async getOverrideBySessionId(sessionId) {
+      const result = await client.query<ChatSandboxOverride>(
+        `${selectChatSandboxOverrideSql} WHERE session_id = $1 LIMIT 1`,
+        [sessionId],
+      );
+      return result.rows[0] ?? null;
+    },
+    async listOverrides() {
+      const result = await client.query<ChatSandboxOverride>(
+        `${selectChatSandboxOverrideSql} ORDER BY created_at ASC`,
+      );
+      return result.rows;
+    },
+    async upsertOverride(input) {
+      const timestamp = nowIso(input.now);
+      const result = await client.query<ChatSandboxOverride>(
+        `INSERT INTO chat_sandbox_overrides (
+          session_id, chat_id, agent_id, workspace, sandbox_mode, expires_at, set_by_user_id, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+          chat_id = EXCLUDED.chat_id,
+          agent_id = EXCLUDED.agent_id,
+          workspace = EXCLUDED.workspace,
+          sandbox_mode = EXCLUDED.sandbox_mode,
+          expires_at = EXCLUDED.expires_at,
+          set_by_user_id = EXCLUDED.set_by_user_id,
+          updated_at = EXCLUDED.updated_at
+        RETURNING session_id AS "sessionId", chat_id AS "chatId", agent_id AS "agentId", workspace, sandbox_mode AS "sandboxMode", expires_at AS "expiresAt", set_by_user_id AS "setByUserId", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+          input.sessionId,
+          input.chatId,
+          input.agentId,
+          input.workspace,
+          input.sandboxMode,
+          input.expiresAt,
+          input.setByUserId ?? null,
+          timestamp,
+          timestamp,
+        ],
+      );
+      return result.rows[0]!;
+    },
+    async deleteOverrideBySessionId(sessionId) {
+      await client.query("DELETE FROM chat_sandbox_overrides WHERE session_id = $1", [sessionId]);
     },
   };
 
@@ -1709,6 +1832,9 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         triggerMessageId: input.triggerMessageId,
         triggerUserId: input.triggerUserId,
         timeoutSeconds: input.timeoutSeconds,
+        requestedSandboxMode: input.requestedSandboxMode ?? null,
+        resolvedSandboxMode: input.resolvedSandboxMode ?? input.requestedSandboxMode ?? "workspace-write",
+        sandboxModeSource: input.sandboxModeSource ?? "workspace_default",
         requestedSessionMode: input.requestedSessionMode ?? "fresh",
         requestedBridgeSessionId: input.requestedBridgeSessionId ?? null,
         resolvedBridgeSessionId: null,
@@ -1724,7 +1850,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
         createdAt: nowIso(input.now),
       };
       await client.query(
-        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, management_mode, trigger_source, trigger_execution_id, trigger_message_id, trigger_user_id, timeout_seconds, requested_session_mode, requested_bridge_session_id, resolved_bridge_session_id, session_recovery_attempted, session_recovery_result, delivery_target, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19, $20)",
+        "INSERT INTO agent_runs (id, session_id, agent_id, workspace, status, prompt, management_mode, trigger_source, trigger_execution_id, trigger_message_id, trigger_user_id, timeout_seconds, requested_sandbox_mode, resolved_sandbox_mode, sandbox_mode_source, requested_session_mode, requested_bridge_session_id, resolved_bridge_session_id, session_recovery_attempted, session_recovery_result, delivery_target, queue_position, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23)",
         [
           run.id,
           run.sessionId,
@@ -1738,6 +1864,9 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
           run.triggerMessageId,
           run.triggerUserId,
           run.timeoutSeconds,
+          run.requestedSandboxMode,
+          run.resolvedSandboxMode,
+          run.sandboxModeSource,
           run.requestedSessionMode,
           run.requestedBridgeSessionId,
           run.resolvedBridgeSessionId,
@@ -2042,6 +2171,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
   return {
     sessions,
     conversationSessionBindings,
+    chatSandboxOverrides,
     sessionWorkspaceBindings,
     workspaceCatalog,
     triggerDefinitions,

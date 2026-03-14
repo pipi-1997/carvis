@@ -54,6 +54,9 @@ describe("trigger definition sync", () => {
           ops: "/tmp/carvis-ops",
         },
         chatBindings: {},
+        sandboxModes: {
+          ops: "workspace-write",
+        },
         managedWorkspaceRoot: "/tmp/carvis-managed",
         templatePath: "/tmp/carvis-template",
       },
@@ -120,6 +123,9 @@ describe("trigger definition sync", () => {
           ops: "/tmp/carvis-ops",
         },
         chatBindings: {},
+        sandboxModes: {
+          ops: "workspace-write",
+        },
         managedWorkspaceRoot: "/tmp/carvis-managed",
         templatePath: "/tmp/carvis-template",
       },
@@ -198,6 +204,9 @@ describe("trigger definition sync", () => {
       workspaceResolverConfig: {
         registry: { ops: "/tmp/carvis-ops" },
         chatBindings: {},
+        sandboxModes: {
+          ops: "workspace-write",
+        },
         managedWorkspaceRoot: "/tmp/carvis-managed",
         templatePath: "/tmp/carvis-template",
       },
@@ -273,6 +282,9 @@ describe("trigger definition sync", () => {
       workspaceResolverConfig: {
         registry: { ops: "/tmp/carvis-ops" },
         chatBindings: {},
+        sandboxModes: {
+          ops: "workspace-write",
+        },
         managedWorkspaceRoot: "/tmp/carvis-managed",
         templatePath: "/tmp/carvis-template",
       },

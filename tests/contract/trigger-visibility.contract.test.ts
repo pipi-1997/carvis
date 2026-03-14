@@ -115,4 +115,46 @@ describe("trigger visibility contract", () => {
       }),
     );
   });
+
+  test("execution 查询会暴露 run 的 sandbox mode 与来源", async () => {
+    const harness = createHarness({
+      workspaceResolver: {
+        sandboxModes: {
+          main: "danger-full-access",
+        },
+      },
+      triggerConfig: {
+        webhooks: [
+          {
+            id: "build-failed",
+            enabled: true,
+            slug: "build-failed",
+            workspace: TEST_AGENT_CONFIG.defaultWorkspace,
+            agentId: TEST_AGENT_CONFIG.id,
+            promptTemplate: "分析 {{summary}}",
+            requiredFields: ["summary"],
+            optionalFields: [],
+            secretEnv: "BUILD_FAILED_SECRET",
+            secret: "build-secret",
+            replayWindowSeconds: 60,
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+      },
+    });
+
+    await harness.postExternalWebhook("build-failed", { summary: "CI failed" }, { secret: "build-secret" });
+    const execution = (await harness.repositories.triggerExecutions.listExecutions()).at(-1);
+    const response = await harness.getInternalTriggers(`/internal/triggers/executions/${execution?.id}`);
+    const body = await response.json();
+
+    expect(body.execution.run).toEqual(
+      expect.objectContaining({
+        resolvedSandboxMode: "danger-full-access",
+        sandboxModeSource: "workspace_default",
+      }),
+    );
+  });
 });

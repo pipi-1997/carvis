@@ -25,6 +25,7 @@ function formatHelpMessage(input: {
   lines.push("可用命令:");
   lines.push("/help 查看帮助");
   lines.push("/status 查看当前会话状态");
+  lines.push("/mode 查看或切换当前会话 sandbox mode");
   lines.push("/new 重置当前会话续聊上下文");
   lines.push("/abort 取消当前活动运行");
   lines.push("/bind <workspace-key> 绑定已有 workspace，不存在时按 template 创建并绑定");

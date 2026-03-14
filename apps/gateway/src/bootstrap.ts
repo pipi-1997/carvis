@@ -14,6 +14,7 @@ import { createGatewayApp } from "./app.ts";
 import { handleAbortCommand } from "./commands/abort.ts";
 import { handleBindCommand } from "./commands/bind.ts";
 import { handleHelpCommand } from "./commands/help.ts";
+import { handleModeCommand } from "./commands/mode.ts";
 import { handleNewCommand } from "./commands/new.ts";
 import { handleStatusCommand } from "./commands/status.ts";
 import { createAllowlistGuard } from "./security/allowlist.ts";
@@ -23,6 +24,7 @@ import { createRunReaper } from "./services/run-reaper.ts";
 import { createGatewayRuntimeHealth } from "./services/runtime-health.ts";
 import { createScheduleManagementPromptBuilder } from "./services/schedule-management-prompt.ts";
 import { createSchedulerLoop } from "./services/scheduler-loop.ts";
+import { createSandboxModeResolver } from "./services/sandbox-mode-resolver.ts";
 import { resolveRequestedSession } from "./services/continuation-binding.ts";
 import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
 import { createTriggerDispatcher } from "./services/trigger-dispatcher.ts";
@@ -103,6 +105,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     notifier,
     queue: services.queue,
     repositories: services.repositories,
+    workspaceResolverConfig: services.config.workspaceResolver,
   });
   const triggerDefinitionSync = createTriggerDefinitionSync({
     config: services.config.triggers,
@@ -187,6 +190,11 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
     repositories: services.repositories,
     workspaceResolverConfig: services.config.workspaceResolver,
     workspaceProvisioner,
+  });
+  const sandboxModeResolver = createSandboxModeResolver({
+    defaultWorkspaceKey: services.config.agent.defaultWorkspace,
+    repositories: services.repositories,
+    workspaceResolverConfig: services.config.workspaceResolver,
   });
   const scheduleManagementPromptBuilder = createScheduleManagementPromptBuilder();
   const app = createGatewayApp({
@@ -314,6 +322,21 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         return;
       }
 
+      if (envelope.command === "mode") {
+        const message = await handleModeCommand({
+          session,
+          chatType: envelope.chatType,
+          userId: envelope.userId,
+          agentConfig: services.config.agent,
+          repositories: services.repositories,
+          workspaceResolverConfig: services.config.workspaceResolver,
+          logger: services.logger,
+          commandArg: envelope.commandArgs[0] ?? null,
+        });
+        await notifier.sendMessage(message);
+        return;
+      }
+
       if (!envelope.prompt) {
         return;
       }
@@ -348,10 +371,46 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         workspacePath: resolvedWorkspace.workspacePath,
         trigger: "prompt",
       });
+      const resolvedSandboxMode = await sandboxModeResolver.resolveForChat({
+        session,
+        workspaceKey: resolvedWorkspace.workspaceKey,
+        workspacePath: resolvedWorkspace.workspacePath,
+      });
+      services.logger.sandboxModeState(
+        resolvedSandboxMode.sandboxOverrideExpired ? "expired" : "resolved",
+        {
+          agentId: services.config.agent.id,
+          chatId: session.chatId,
+          sessionId: session.id,
+          workspaceKey: resolvedWorkspace.workspaceKey,
+          workspacePath: resolvedWorkspace.workspacePath,
+          sandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+          sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
+          expiresAt: resolvedSandboxMode.sandboxOverrideExpiresAt,
+        },
+      );
+      if (
+        binding?.bridgeSessionId
+        && binding.workspace === resolvedWorkspace.workspacePath
+        && binding.sandboxMode
+        && binding.sandboxMode !== resolvedSandboxMode.resolvedSandboxMode
+      ) {
+        services.logger.sandboxModeState("fresh_forced", {
+          agentId: services.config.agent.id,
+          chatId: session.chatId,
+          sessionId: session.id,
+          workspaceKey: resolvedWorkspace.workspaceKey,
+          workspacePath: resolvedWorkspace.workspacePath,
+          sandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+          sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
+          reason: "sandbox_mode_changed",
+        });
+      }
 
       const { requestedSessionMode, requestedBridgeSessionId } = resolveRequestedSession({
         binding,
         workspace: resolvedWorkspace.workspacePath,
+        resolvedSandboxMode: resolvedSandboxMode.resolvedSandboxMode,
       });
       const prompt = scheduleManagementPromptBuilder.build({
         workspace: resolvedWorkspace.workspacePath,
@@ -367,6 +426,9 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
         triggerMessageId: envelope.messageId,
         triggerUserId: envelope.userId,
         timeoutSeconds: services.config.agent.timeoutSeconds,
+        requestedSandboxMode: resolvedSandboxMode.requestedSandboxMode,
+        resolvedSandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+        sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
         requestedSessionMode,
         requestedBridgeSessionId,
       });

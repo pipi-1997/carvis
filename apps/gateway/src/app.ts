@@ -47,6 +47,7 @@ export function createGatewayApp(input: GatewayAppInput) {
     agentConfig: input.agentConfig,
     queue: input.queue,
     repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
     notifier: input.notifier,
     logger: input.logger,
     now: input.now,

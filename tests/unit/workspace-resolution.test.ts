@@ -22,6 +22,9 @@ describe("workspace resolution", () => {
           main: TEST_AGENT_CONFIG.workspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write" as const,
+        },
         managedWorkspaceRoot,
         templatePath,
       },
@@ -34,6 +37,9 @@ describe("workspace resolution", () => {
           main: TEST_AGENT_CONFIG.workspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write" as const,
+        },
         managedWorkspaceRoot,
         templatePath,
       },
@@ -72,6 +78,9 @@ describe("workspace resolution", () => {
         main: TEST_AGENT_CONFIG.workspace,
       },
       chatBindings: {},
+      sandboxModes: {
+        main: "workspace-write" as const,
+      },
       managedWorkspaceRoot: join(tempRoot, "managed"),
       templatePath: join(tempRoot, "template"),
     };
@@ -118,6 +127,9 @@ describe("workspace resolution", () => {
           main: TEST_AGENT_CONFIG.workspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write" as const,
+        },
         managedWorkspaceRoot,
         templatePath,
       },
@@ -147,6 +159,9 @@ describe("workspace resolution", () => {
           main: TEST_AGENT_CONFIG.workspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write" as const,
+        },
         managedWorkspaceRoot,
         templatePath,
       },
@@ -171,6 +186,9 @@ describe("workspace resolution", () => {
           main: TEST_AGENT_CONFIG.workspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write" as const,
+        },
         managedWorkspaceRoot,
         templatePath,
       },

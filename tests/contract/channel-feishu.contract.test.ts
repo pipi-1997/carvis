@@ -57,6 +57,24 @@ describe("FeishuAdapter", () => {
     expect(envelope.prompt).toBeNull();
   });
 
+  test("将 /mode danger-full-access 识别为命令和参数", async () => {
+    const adapter = new FeishuAdapter({
+      signingSecret: "test-secret",
+      sender: {
+        addReaction: async () => {},
+        removeReaction: async () => {},
+        sendMessage: async () => ({ messageId: "delivery-1" }),
+      },
+    });
+    const payload = createFeishuPayload("/mode danger-full-access");
+
+    const envelope = await adapter.parseInbound(payload);
+
+    expect(envelope.command).toBe("mode");
+    expect(envelope.commandArgs).toEqual(["danger-full-access"]);
+    expect(envelope.prompt).toBeNull();
+  });
+
   test("只接受通过签名校验的 webhook", async () => {
     const adapter = new FeishuAdapter({
       signingSecret: "test-secret",

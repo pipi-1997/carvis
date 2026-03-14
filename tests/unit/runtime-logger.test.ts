@@ -111,6 +111,38 @@ describe("runtime logger", () => {
     });
   });
 
+  test("sandbox mode 状态会输出结构化日志", () => {
+    const logger = createRuntimeLogger();
+
+    logger.sandboxModeState("fresh_forced", {
+      agentId: "codex-main",
+      chatId: "chat-ops",
+      sessionId: "session-ops",
+      workspaceKey: "ops",
+      workspacePath: "/tmp/carvis-ops-workspace",
+      sandboxMode: "danger-full-access",
+      sandboxModeSource: "chat_override",
+      reason: "sandbox_mode_changed",
+    });
+
+    expect(logger.listEntries()[0]).toEqual({
+      level: "warn",
+      message: "sandbox.mode.fresh_forced",
+      context: {
+        agentId: "codex-main",
+        chatId: "chat-ops",
+        reason: "sandbox_mode_changed",
+        role: "gateway",
+        sandboxMode: "danger-full-access",
+        sandboxModeSource: "chat_override",
+        sessionId: "session-ops",
+        status: "fresh_forced",
+        workspaceKey: "ops",
+        workspacePath: "/tmp/carvis-ops-workspace",
+      },
+    });
+  });
+
   test("workspace 解析结果会输出结构化日志", () => {
     const logger = createRuntimeLogger();
 

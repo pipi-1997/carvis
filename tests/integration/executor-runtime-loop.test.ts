@@ -203,6 +203,9 @@ function createRuntimeConfig(env: Record<string, string>): RuntimeConfig {
         main: "/tmp/carvis-runtime-workspace",
       },
       chatBindings: {},
+      sandboxModes: {
+        main: "workspace-write",
+      },
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-workspace-template",
     },

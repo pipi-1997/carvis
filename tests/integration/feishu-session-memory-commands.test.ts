@@ -44,6 +44,16 @@ describe("Feishu session memory commands", () => {
       user_id: "user-001",
     });
     await harness.executor.processNext();
+    const session = await harness.repositories.sessions.getSessionByChat("feishu", "chat-001");
+    await harness.repositories.chatSandboxOverrides.upsertOverride({
+      sessionId: session!.id,
+      chatId: "chat-001",
+      agentId: "codex-main",
+      workspace: harness.agentConfig.workspace,
+      sandboxMode: "workspace-write",
+      expiresAt: "2026-03-08T00:30:00.000Z",
+      setByUserId: "user-001",
+    });
 
     await harness.postFeishuText("继续旧上下文里的任务", {
       chat_id: "chat-001",
@@ -59,9 +69,9 @@ describe("Feishu session memory commands", () => {
     });
     expect(resetResponse.status).toBe(200);
 
-    const session = await harness.repositories.sessions.getSessionByChat("feishu", "chat-001");
     const bindingAfterReset = await harness.repositories.conversationSessionBindings.getBindingBySessionId(session!.id);
     expect(bindingAfterReset?.status).toBe("reset");
+    expect(await harness.repositories.chatSandboxOverrides.getOverrideBySessionId(session!.id)).toBeNull();
 
     const running = await harness.repositories.runs.getLatestRunByChat("feishu", "chat-001");
     expect(running?.status).toBe("running");
@@ -106,6 +116,7 @@ describe("Feishu session memory commands", () => {
     ]);
 
     expect(harness.sentMessages.at(-1)?.content).toContain("当前会话续聊: recent_reset");
+    expect(harness.sentMessages.at(-1)?.content).toContain("sandbox 来源: workspace_default");
   });
 
   test("/new 之后旧 run 完成也不能恢复旧续聊绑定", async () => {

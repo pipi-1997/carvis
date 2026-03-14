@@ -12,9 +12,11 @@ import type { FeishuAdapter } from "@carvis/channel-feishu";
 import { handleAbortCommand } from "../commands/abort.ts";
 import { handleBindCommand } from "../commands/bind.ts";
 import { handleHelpCommand } from "../commands/help.ts";
+import { handleModeCommand } from "../commands/mode.ts";
 import { handleNewCommand } from "../commands/new.ts";
 import { handleStatusCommand } from "../commands/status.ts";
 import { resolveRequestedSession } from "../services/continuation-binding.ts";
+import { createSandboxModeResolver } from "../services/sandbox-mode-resolver.ts";
 import { createScheduleManagementPromptBuilder } from "../services/schedule-management-prompt.ts";
 import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
 import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
@@ -48,6 +50,11 @@ export function createFeishuWebhookHandler(input: {
     workspaceProvisioner,
   });
   const scheduleManagementPromptBuilder = createScheduleManagementPromptBuilder();
+  const sandboxModeResolver = createSandboxModeResolver({
+    defaultWorkspaceKey: input.agentConfig.defaultWorkspace,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+  });
 
   return async function handle(rawBody: string, headers: Record<string, string | undefined>) {
     const verified = await input.adapter.verifyWebhook({
@@ -178,6 +185,25 @@ export function createFeishuWebhookHandler(input: {
       };
     }
 
+    if (envelope.command === "mode") {
+      const message = await handleModeCommand({
+        session,
+        chatType: envelope.chatType,
+        userId: envelope.userId,
+        agentConfig: input.agentConfig,
+        repositories: input.repositories,
+        workspaceResolverConfig: input.workspaceResolverConfig,
+        logger: input.logger,
+        commandArg: envelope.commandArgs[0] ?? null,
+        now,
+      });
+      await input.notifier.sendMessage(message);
+      return {
+        status: 200,
+        body: { ok: true },
+      };
+    }
+
     if (envelope.command === "help") {
       const message = await handleHelpCommand({
         session,
@@ -252,10 +278,47 @@ export function createFeishuWebhookHandler(input: {
       workspacePath: resolvedWorkspace.workspacePath,
       trigger: "prompt",
     });
+    const resolvedSandboxMode = await sandboxModeResolver.resolveForChat({
+      session,
+      workspaceKey: resolvedWorkspace.workspaceKey,
+      workspacePath: resolvedWorkspace.workspacePath,
+      now: now(),
+    });
+    input.logger?.sandboxModeState(
+      resolvedSandboxMode.sandboxOverrideExpired ? "expired" : "resolved",
+      {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        workspaceKey: resolvedWorkspace.workspaceKey,
+        workspacePath: resolvedWorkspace.workspacePath,
+        sandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+        sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
+        expiresAt: resolvedSandboxMode.sandboxOverrideExpiresAt,
+      },
+    );
+    if (
+      binding?.bridgeSessionId
+      && binding.workspace === resolvedWorkspace.workspacePath
+      && binding.sandboxMode
+      && binding.sandboxMode !== resolvedSandboxMode.resolvedSandboxMode
+    ) {
+      input.logger?.sandboxModeState("fresh_forced", {
+        agentId: input.agentConfig.id,
+        chatId: session.chatId,
+        sessionId: session.id,
+        workspaceKey: resolvedWorkspace.workspaceKey,
+        workspacePath: resolvedWorkspace.workspacePath,
+        sandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+        sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
+        reason: "sandbox_mode_changed",
+      });
+    }
 
     const { requestedSessionMode, requestedBridgeSessionId } = resolveRequestedSession({
       binding,
       workspace: resolvedWorkspace.workspacePath,
+      resolvedSandboxMode: resolvedSandboxMode.resolvedSandboxMode,
     });
     const prompt = scheduleManagementPromptBuilder.build({
       workspace: resolvedWorkspace.workspacePath,
@@ -271,6 +334,9 @@ export function createFeishuWebhookHandler(input: {
       triggerMessageId: envelope.messageId,
       triggerUserId: envelope.userId,
       timeoutSeconds: input.agentConfig.timeoutSeconds,
+      requestedSandboxMode: resolvedSandboxMode.requestedSandboxMode,
+      resolvedSandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+      sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
       requestedSessionMode,
       requestedBridgeSessionId,
       now: now(),

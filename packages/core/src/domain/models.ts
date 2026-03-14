@@ -30,6 +30,8 @@ export type ConversationSessionMemoryState =
   | "recent_recovered"
   | "recent_recovery_failed";
 export type DeliveryStatus = "pending" | "sent" | "failed";
+export type CodexSandboxMode = "workspace-write" | "danger-full-access";
+export type SandboxModeSource = "workspace_default" | "chat_override";
 export type TriggerDeliveryKind = "none" | "feishu_chat";
 export type DeliveryKind =
   | "status"
@@ -40,7 +42,7 @@ export type DeliveryKind =
   | "card_update"
   | "card_complete"
   | "fallback_terminal";
-export type CommandName = "status" | "abort" | "new" | "bind" | "help" | null;
+export type CommandName = "status" | "abort" | "new" | "bind" | "mode" | "help" | null;
 export type RunEventType =
   | "run.queued"
   | "run.started"
@@ -220,6 +222,7 @@ export interface ConversationSessionBinding {
   workspace: string;
   bridge: AgentConfig["bridge"];
   bridgeSessionId: string | null;
+  sandboxMode: CodexSandboxMode | null;
   mode: SessionMode;
   status: ConversationSessionBindingStatus;
   lastBoundAt: string | null;
@@ -229,6 +232,18 @@ export interface ConversationSessionBinding {
   lastInvalidationReason: string | null;
   lastRecoveryAt: string | null;
   lastRecoveryResult: ConversationSessionRecoveryResult | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatSandboxOverride {
+  sessionId: string;
+  chatId: string;
+  agentId: string;
+  workspace: string;
+  sandboxMode: CodexSandboxMode;
+  expiresAt: string;
+  setByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -264,6 +279,9 @@ export interface RunRequest {
   triggerMessageId: string | null;
   triggerUserId: string | null;
   timeoutSeconds: number;
+  requestedSandboxMode?: CodexSandboxMode | null;
+  resolvedSandboxMode?: CodexSandboxMode;
+  sandboxModeSource?: SandboxModeSource;
   bridgeSessionId?: string | null;
   sessionMode?: SessionMode;
   deliveryTarget?: TriggerDeliveryTarget | null;
@@ -283,6 +301,9 @@ export interface Run {
   triggerMessageId: string | null;
   triggerUserId: string | null;
   timeoutSeconds: number;
+  requestedSandboxMode: CodexSandboxMode | null;
+  resolvedSandboxMode: CodexSandboxMode;
+  sandboxModeSource: SandboxModeSource;
   requestedSessionMode: SessionMode;
   requestedBridgeSessionId: string | null;
   resolvedBridgeSessionId: string | null;
@@ -391,6 +412,10 @@ export interface StatusSnapshot {
   isLatestRunQueued: boolean;
   aheadCount: number;
   continuationState: ConversationSessionMemoryState;
+  sandboxMode?: CodexSandboxMode;
+  sandboxModeSource?: SandboxModeSource;
+  sandboxOverrideExpiresAt?: string | null;
+  sandboxOverrideExpired?: boolean;
 }
 
 export interface QueueInfo {

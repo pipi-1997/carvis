@@ -24,6 +24,7 @@ export interface ExecutorConfig {
 export interface WorkspaceResolverConfig {
   registry: Record<string, string>;
   chatBindings: Record<string, string>;
+  sandboxModes: Record<string, import("./models.ts").CodexSandboxMode>;
   managedWorkspaceRoot: string;
   templatePath: string;
 }
@@ -118,6 +119,7 @@ export interface RuntimeFingerprintInput {
   workspace: string;
   workspaceRegistryEntries: string[];
   workspaceChatBindings: string[];
+  workspaceSandboxModeEntries: string[];
   managedWorkspaceRoot: string;
   templatePath: string;
   feishuAllowFrom: string[];

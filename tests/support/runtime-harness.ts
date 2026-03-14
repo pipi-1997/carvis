@@ -26,6 +26,7 @@ type RuntimeConfigFixture = {
   workspaceResolver: {
     registry: Record<string, string>;
     chatBindings: Record<string, string>;
+    sandboxModes: Record<string, "workspace-write" | "danger-full-access">;
     managedWorkspaceRoot: string;
     templatePath: string;
   };
@@ -150,6 +151,10 @@ function mergeRuntimeConfig(
         baseConfig.workspaceResolver.chatBindings,
         overrideConfig.workspaceResolver?.chatBindings,
       ),
+      sandboxModes: mergeStringRecord(
+        baseConfig.workspaceResolver.sandboxModes,
+        overrideConfig.workspaceResolver?.sandboxModes,
+      ) as Record<string, "workspace-write" | "danger-full-access">,
     },
     triggers: {
       scheduledJobs: overrideConfig.triggers?.scheduledJobs
@@ -191,6 +196,9 @@ function createDefaultRuntimeConfig(paths: {
         main: paths.defaultWorkspaceDir,
       },
       chatBindings: {},
+      sandboxModes: {
+        main: "workspace-write",
+      },
       managedWorkspaceRoot: paths.managedWorkspaceRoot,
       templatePath: paths.templateDir,
     },

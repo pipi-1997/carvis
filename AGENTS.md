@@ -56,8 +56,10 @@ tests/
 - `packages/bridge-codex` 现在同时包含测试用脚本化 transport 和默认的 `codex exec` CLI transport。
 - `packages/bridge-codex` 现在支持 `codex exec` 新会话与 `codex exec resume` 续聊两种执行模式，并在终态事件中回传 `bridge_session_id` / `session_outcome`；续聊 session 无效时会标记 `session_invalid`。
 - 当前普通消息在入队前会读取 `ConversationSessionBinding`，同一飞书 `chat` 会默认续用同一个 Codex 原生 session。
-- `/new` 当前会重置当前 `chat` 的续聊绑定，但不会打断活动运行。
-- `/status` 当前返回固定 workspace、active run、最近一次请求是否排队、前方队列长度，以及 `fresh` / `continued` / `recent_reset` / `recent_recovered` / `recent_recovery_failed` 这些续聊状态；不返回完整队列列表。
+- 当前 runtime config 已支持 `workspaceResolver.sandboxModes`，为每个 workspace 声明 `workspace-write` / `danger-full-access` 默认 mode。
+- 飞书当前支持 `/mode`、`/mode workspace-write`、`/mode danger-full-access`、`/mode reset`；override 只作用于当前 `chat`，固定 30 分钟过期。
+- `/new` 当前会重置当前 `chat` 的续聊绑定并清除 sandbox override，但不会打断活动运行。
+- `/status` 当前返回 workspace、active run、最近一次请求是否排队、前方队列长度、续聊状态，以及当前 sandbox mode / 来源 / override 到期或已过期状态；不返回完整队列列表。
 - 本地 runtime 约定从 `~/.carvis/config.json` 读取结构化配置，并从 `POSTGRES_URL`、`REDIS_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 读取环境相关信息。
 - `CONFIG_DRIFT` 通过 Redis 中共享的 runtime fingerprint 检测；出现漂移时 `gateway /healthz` 降级，`executor` 拒绝消费。
 - 本机验证结果：
@@ -74,7 +76,9 @@ tests/
 - `004-codex-session-memory` 当前实现状态：
   - 同一飞书 `chat` 的后续普通消息默认续用当前 `ConversationSessionBinding`
   - 首轮成功后会为该 `chat` 建立或刷新底层 Codex session 绑定
-  - `/new` 会清空当前 `chat` 的续聊绑定，后续普通消息从新会话开始
+  - continuation binding 会记录建立该 session 时的 sandbox mode；mode 改变后的下一条普通消息会强制 fresh
+  - `/new` 会清空当前 `chat` 的续聊绑定和 sandbox override，后续普通消息从新会话和 workspace 默认 mode 开始
   - 若底层续聊 session 无效，`executor` 会在同一 run 内自动 fresh 重试一次
-  - `/status` 会暴露 `fresh` / `continued` / `recent_reset` / `recent_recovered` / `recent_recovery_failed`
+  - `/bind` 切 workspace 时也会清理 sandbox override，避免跨 workspace 沿用旧权限
+  - `/status` 会暴露 `fresh` / `continued` / `recent_reset` / `recent_recovered` / `recent_recovery_failed`，以及当前 sandbox mode / 来源 / override 状态
 <!-- MANUAL ADDITIONS END -->

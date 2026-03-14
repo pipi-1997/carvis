@@ -58,6 +58,19 @@ type CommandStateInput = {
   reason?: string;
 };
 
+type SandboxModeStateInput = {
+  agentId: string;
+  chatId: string;
+  sessionId: string;
+  runId?: string | null;
+  workspaceKey?: string | null;
+  workspacePath?: string | null;
+  sandboxMode?: string | null;
+  sandboxModeSource?: string | null;
+  expiresAt?: string | null;
+  reason?: string | null;
+};
+
 type TriggerDefinitionSyncStateInput = {
   definitionId: string;
   sourceType: TriggerDefinitionSourceType;
@@ -123,6 +136,26 @@ export function createRuntimeLogger(baseLogger = new StructuredLogger()) {
         ...(input.command ? { command: input.command } : {}),
         ...(input.normalizedText ? { normalizedText: input.normalizedText } : {}),
         ...(input.rawText ? { rawText: input.rawText } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+      });
+    },
+    sandboxModeState(
+      status: "resolved" | "set" | "reset" | "expired" | "fresh_forced",
+      input: SandboxModeStateInput,
+    ) {
+      const level = status === "expired" || status === "fresh_forced" ? "warn" : "info";
+      baseLogger[level](`sandbox.mode.${status}`, {
+        role: "gateway",
+        status,
+        agentId: input.agentId,
+        chatId: input.chatId,
+        sessionId: input.sessionId,
+        ...(input.runId ? { runId: input.runId } : {}),
+        ...(input.workspaceKey ? { workspaceKey: input.workspaceKey } : {}),
+        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
+        ...(input.sandboxMode ? { sandboxMode: input.sandboxMode } : {}),
+        ...(input.sandboxModeSource ? { sandboxModeSource: input.sandboxModeSource } : {}),
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
       });
     },

@@ -147,4 +147,45 @@ describe("trigger visibility integration", () => {
       triggeredAt: "2026-03-08T00:01:00.000Z",
     });
   });
+
+  test("trigger 内部查询面展示 sandbox mode 与来源", async () => {
+    const harness = createHarness({
+      workspaceResolver: {
+        sandboxModes: {
+          main: "danger-full-access",
+        },
+      },
+      triggerConfig: {
+        scheduledJobs: [
+          {
+            id: "daily-report",
+            enabled: true,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "1 0 * * *",
+            timezone: null,
+            promptTemplate: "生成日报",
+            delivery: {
+              kind: "none",
+            },
+          },
+        ],
+      },
+    });
+
+    await harness.syncTriggerDefinitions();
+    harness.advanceTime(61_000);
+    await harness.scheduler.runOnce();
+
+    const execution = (await harness.repositories.triggerExecutions.listExecutions()).at(-1);
+    const response = await harness.getInternalTriggers(`/internal/triggers/executions/${execution?.id}`);
+    const body = await response.json();
+
+    expect(body.execution.run).toEqual(
+      expect.objectContaining({
+        resolvedSandboxMode: "danger-full-access",
+        sandboxModeSource: "workspace_default",
+      }),
+    );
+  });
 });

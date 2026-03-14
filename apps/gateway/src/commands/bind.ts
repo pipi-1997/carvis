@@ -27,6 +27,9 @@ export async function handleBindCommand(input: {
       now: now(),
     });
   };
+  const clearSandboxOverride = async () => {
+    await input.repositories.chatSandboxOverrides.deleteOverrideBySessionId(input.session.id);
+  };
 
   if (!input.workspaceKey) {
     return {
@@ -107,6 +110,7 @@ export async function handleBindCommand(input: {
       now: now(),
     });
     await resetContinuationBinding();
+    await clearSandboxOverride();
     input.logger?.workspaceBindState("bound", {
       agentId: input.agentConfig.id,
       chatId: input.session.chatId,
@@ -131,6 +135,7 @@ export async function handleBindCommand(input: {
       now: now(),
     });
     await resetContinuationBinding();
+    await clearSandboxOverride();
     input.logger?.workspaceBindState("created", {
       agentId: input.agentConfig.id,
       chatId: input.session.chatId,

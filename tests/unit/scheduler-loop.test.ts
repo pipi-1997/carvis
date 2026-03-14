@@ -56,6 +56,17 @@ describe("scheduler loop", () => {
         },
         queue: new RunQueue(),
         repositories,
+        workspaceResolverConfig: {
+          registry: {
+            main: "/tmp/carvis/main",
+          },
+          chatBindings: {},
+          sandboxModes: {
+            main: "workspace-write",
+          },
+          managedWorkspaceRoot: "/tmp/carvis",
+          templatePath: "/tmp/carvis-template",
+        },
         now: () => new Date("2026-03-10T09:05:00.000Z"),
       }),
     });
@@ -116,6 +127,17 @@ describe("scheduler loop", () => {
         },
         queue: new RunQueue(),
         repositories,
+        workspaceResolverConfig: {
+          registry: {
+            main: "/tmp/carvis/main",
+          },
+          chatBindings: {},
+          sandboxModes: {
+            main: "workspace-write",
+          },
+          managedWorkspaceRoot: "/tmp/carvis",
+          templatePath: "/tmp/carvis-template",
+        },
         now: () => new Date("2026-03-10T09:00:30.000Z"),
       }),
     });

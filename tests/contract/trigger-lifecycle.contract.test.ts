@@ -5,6 +5,11 @@ import { createHarness } from "../support/harness.ts";
 describe("trigger lifecycle contract", () => {
   test("scheduled job 经过 queued -> running -> completed", async () => {
     const harness = createHarness({
+      workspaceResolver: {
+        sandboxModes: {
+          main: "danger-full-access",
+        },
+      },
       triggerConfig: {
         scheduledJobs: [
           {
@@ -43,6 +48,8 @@ describe("trigger lifecycle contract", () => {
     expect((await harness.repositories.runs.listRuns()).at(-1)).toMatchObject({
       sessionId: null,
       triggerSource: "scheduled_job",
+      resolvedSandboxMode: "danger-full-access",
+      sandboxModeSource: "workspace_default",
       requestedSessionMode: "fresh",
       status: "completed",
     });

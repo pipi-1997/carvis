@@ -1,8 +1,9 @@
-import type { ConversationSessionBinding, SessionMode } from "@carvis/core";
+import type { CodexSandboxMode, ConversationSessionBinding, SessionMode } from "@carvis/core";
 
 export function resolveRequestedSession(input: {
   binding: ConversationSessionBinding | null;
   workspace: string;
+  resolvedSandboxMode?: CodexSandboxMode;
 }): {
   requestedSessionMode: SessionMode;
   requestedBridgeSessionId: string | null;
@@ -15,6 +16,13 @@ export function resolveRequestedSession(input: {
   }
 
   if (input.binding.workspace !== input.workspace) {
+    return {
+      requestedSessionMode: "fresh",
+      requestedBridgeSessionId: null,
+    };
+  }
+
+  if (input.resolvedSandboxMode && input.binding.sandboxMode !== input.resolvedSandboxMode) {
     return {
       requestedSessionMode: "fresh",
       requestedBridgeSessionId: null,

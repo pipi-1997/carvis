@@ -12,6 +12,9 @@ const baseRequest: RunRequest = {
   agentId: "codex-main",
   workspace: "/tmp/carvis-workspace",
   prompt: "帮我总结仓库目标",
+  requestedSandboxMode: "workspace-write",
+  resolvedSandboxMode: "workspace-write",
+  sandboxModeSource: "workspace_default",
   triggerMessageId: "msg-001",
   triggerUserId: "user-001",
   timeoutSeconds: 60,
@@ -188,6 +191,57 @@ printf '%s' '恢复后总结' > "$out_file"
       resultSummary: "恢复后总结",
       bridgeSessionId: "thread-recovered",
       sessionOutcome: "created",
+    });
+  });
+
+  test("danger-full-access run 会透传对应 sandbox 参数", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "carvis-codex-cli-"));
+    cleanupCallbacks.push(() => rm(tempDir, { force: true, recursive: true }));
+
+    const argsFile = join(tempDir, "args.txt");
+    const codexShim = join(tempDir, "codex-shim.sh");
+    await writeFile(
+      codexShim,
+      `#!/bin/sh
+printf '%s\n' "$@" > "${argsFile}"
+out_file=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output-last-message" ]; then
+    shift
+    out_file="$1"
+  fi
+  shift
+done
+printf '%s' 'danger 模式总结' > "$out_file"
+`,
+    );
+    await chmod(codexShim, 0o755);
+
+    const transport = createCodexCliTransport({
+      codexCommand: codexShim,
+    });
+
+    const chunks = [];
+    for await (const chunk of transport.run(
+      {
+        ...baseRequest,
+        workspace: tempDir,
+        requestedSandboxMode: "danger-full-access",
+        resolvedSandboxMode: "danger-full-access",
+      },
+      {
+        signal: new AbortController().signal,
+      },
+    )) {
+      chunks.push(chunk);
+    }
+
+    const argsText = await Bun.file(argsFile).text();
+    expect(argsText).toContain("exec\n--sandbox\ndanger-full-access\n--json\n--color\nnever\n");
+    expect(chunks.at(-1)).toEqual({
+      type: "result",
+      resultSummary: "danger 模式总结",
+      sessionOutcome: "unchanged",
     });
   });
 

@@ -44,6 +44,7 @@ const runtimeFileSchema = z.object({
       "workspaceResolver.registry must not be empty",
     ),
     chatBindings: z.record(z.string(), z.string().min(1)).default({}),
+    sandboxModes: z.record(z.string(), z.enum(["workspace-write", "danger-full-access"])),
     managedWorkspaceRoot: z.string().min(1, "workspaceResolver.managedWorkspaceRoot is required"),
     templatePath: z.string().min(1, "workspaceResolver.templatePath is required"),
   }),
@@ -150,6 +151,9 @@ export function buildRuntimeFingerprint(config: RuntimeConfig): string {
     workspaceChatBindings: Object.entries(config.workspaceResolver.chatBindings)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([chatId, workspaceKey]) => `${chatId}=${workspaceKey}`),
+    workspaceSandboxModeEntries: Object.entries(config.workspaceResolver.sandboxModes ?? {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([workspaceKey, sandboxMode]) => `${workspaceKey}=${sandboxMode}`),
     managedWorkspaceRoot: config.workspaceResolver.managedWorkspaceRoot,
     templatePath: config.workspaceResolver.templatePath,
     feishuAllowFrom: [...config.feishu.allowFrom].sort(),
@@ -206,6 +210,18 @@ function validateWorkspaceResolver(config: RuntimeFileConfig) {
     }
     if (!chatId) {
       throw new Error("workspaceResolver.chatBindings keys must not be empty");
+    }
+  }
+
+  const sandboxModeKeys = Object.keys(config.workspaceResolver.sandboxModes);
+  for (const workspaceKey of Object.keys(registry)) {
+    if (!config.workspaceResolver.sandboxModes[workspaceKey]) {
+      throw new Error("workspaceResolver.sandboxModes must define every workspace in workspaceResolver.registry");
+    }
+  }
+  for (const workspaceKey of sandboxModeKeys) {
+    if (!registry[workspaceKey]) {
+      throw new Error("workspaceResolver.sandboxModes must only reference existing workspace keys");
     }
   }
 }

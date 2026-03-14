@@ -1,6 +1,7 @@
 import type { AgentConfig, ChatType, OutboundMessage, QueueDriver, RepositoryBundle, RuntimeConfig, Session, StatusSnapshot } from "@carvis/core";
 
 import { formatStatusSnapshot } from "../services/status-presenter.ts";
+import { createSandboxModeResolver } from "../services/sandbox-mode-resolver.ts";
 import { createWorkspaceProvisioner } from "../services/workspace-provisioner.ts";
 import { createWorkspaceResolver } from "../services/workspace-resolver.ts";
 
@@ -21,6 +22,11 @@ export async function handleStatusCommand(input: {
     repositories: input.repositories,
     workspaceResolverConfig: input.workspaceResolverConfig,
     workspaceProvisioner,
+  });
+  const sandboxModeResolver = createSandboxModeResolver({
+    defaultWorkspaceKey: input.agentConfig.defaultWorkspace,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
   });
   const resolvedBinding = await workspaceResolver.resolveCurrentBinding({
     session: input.session,
@@ -53,10 +59,22 @@ export async function handleStatusCommand(input: {
           ? "recent_reset"
           : binding?.status === "invalidated" && binding.lastRecoveryResult === "failed"
             ? "recent_recovery_failed"
-            : binding?.bridgeSessionId
+          : binding?.bridgeSessionId
               ? "continued"
               : "fresh",
   };
+
+  if (resolvedBinding.kind === "resolved") {
+    const sandbox = await sandboxModeResolver.resolveForChat({
+      session: input.session,
+      workspaceKey: resolvedBinding.workspaceKey,
+      workspacePath: resolvedBinding.workspacePath,
+    });
+    snapshot.sandboxMode = sandbox.resolvedSandboxMode;
+    snapshot.sandboxModeSource = sandbox.sandboxModeSource;
+    snapshot.sandboxOverrideExpiresAt = sandbox.sandboxOverrideExpiresAt;
+    snapshot.sandboxOverrideExpired = sandbox.sandboxOverrideExpired;
+  }
 
   return {
     chatId: input.session.chatId,

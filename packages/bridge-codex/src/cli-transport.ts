@@ -28,6 +28,7 @@ export function createCodexCliTransport(
           const tempDir = await mkdtemp(join(tmpdir(), "carvis-codex-"));
           const outputFile = join(tempDir, "last-message.txt");
           const spawnCwd = await resolveSpawnCwd(request.workspace);
+          const sandboxMode = request.resolvedSandboxMode ?? request.requestedSandboxMode ?? "workspace-write";
           if (!spawnCwd) {
             yield {
               type: "error" as const,
@@ -42,7 +43,7 @@ export function createCodexCliTransport(
               ? [
                   "exec",
                   "--sandbox",
-                  "workspace-write",
+                  sandboxMode,
                   "resume",
                   "--json",
                   "--skip-git-repo-check",
@@ -54,7 +55,7 @@ export function createCodexCliTransport(
               : [
                   "exec",
                   "--sandbox",
-                  "workspace-write",
+                  sandboxMode,
                   "--json",
                   "--color",
                   "never",

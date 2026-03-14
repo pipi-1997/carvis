@@ -8,10 +8,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:gateway": "bun run --filter @carvis/gateway dev",
-    "dev:executor": "bun run --filter @carvis/executor dev",
-    "start:gateway": "bun run --filter @carvis/gateway dev",
-    "start:executor": "bun run --filter @carvis/executor dev",
+    "dev:gateway": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/gateway dev",
+    "dev:executor": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/executor dev",
+    "start:gateway": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/gateway dev",
+    "start:executor": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/executor dev",
     "test:003": "bun test tests/unit/presentation-setup.test.ts tests/unit/runtime-harness.test.ts",
     "test:memory-benchmark": "bun test tests/contract/memory-benchmark-runner.contract.test.ts tests/contract/memory-benchmark-gate.contract.test.ts tests/integration/memory-benchmark.test.ts tests/integration/memory-benchmark-golden-scenarios.test.ts tests/integration/memory-benchmark-suite-coverage.test.ts tests/integration/memory-benchmark-gate.test.ts",
     "test:memory-benchmark:gate": "bun run test:memory-benchmark",

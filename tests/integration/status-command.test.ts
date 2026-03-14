@@ -32,6 +32,7 @@ describe("/status integration", () => {
 
     const latestDelivery = (await harness.repositories.deliveries.listDeliveries()).at(-1);
     expect(latestDelivery?.content).toContain("前方队列长度: 1");
+    expect(latestDelivery?.content).toContain("sandbox mode: workspace-write");
 
     await harness.cancelSignals.requestCancellation((await harness.repositories.runs.listRuns())[0].id);
     await firstRun;

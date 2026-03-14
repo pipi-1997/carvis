@@ -81,6 +81,8 @@ function parseCommand(rawText: string): Pick<InboundEnvelope, "command" | "comma
           ? "new"
           : commandToken === "/bind"
             ? "bind"
+            : commandToken === "/mode"
+              ? "mode"
             : commandToken === "/help"
               ? "help"
               : null;

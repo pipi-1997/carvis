@@ -4,11 +4,13 @@ import type {
   AgentConfig,
   QueueDriver,
   RepositoryBundle,
+  RuntimeConfig,
   RunEvent,
   TriggerDefinition,
   TriggerExecutionStatus,
 } from "@carvis/core";
 
+import { createSandboxModeResolver } from "./sandbox-mode-resolver.ts";
 import { resolveTriggerDeliveryTarget } from "./trigger-delivery-resolver.ts";
 
 type TriggerDispatcherInput = {
@@ -19,11 +21,17 @@ type TriggerDispatcherInput = {
   };
   queue: QueueDriver;
   repositories: RepositoryBundle;
+  workspaceResolverConfig: RuntimeConfig["workspaceResolver"];
   now?: () => Date;
 };
 
 export function createTriggerDispatcher(input: TriggerDispatcherInput) {
   const now = input.now ?? (() => new Date());
+  const sandboxModeResolver = createSandboxModeResolver({
+    defaultWorkspaceKey: input.agentConfig.defaultWorkspace,
+    repositories: input.repositories,
+    workspaceResolverConfig: input.workspaceResolverConfig,
+  });
 
   async function dispatchDefinition(args: {
     definition: TriggerDefinition;
@@ -49,6 +57,9 @@ export function createTriggerDispatcher(input: TriggerDispatcherInput) {
       });
 
       const activeRun = await input.repositories.runs.findActiveRunByWorkspace(args.definition.workspace);
+      const resolvedSandboxMode = sandboxModeResolver.resolveWorkspaceDefault({
+        workspacePath: args.definition.workspace,
+      });
       const run = await input.repositories.runs.createQueuedRun({
         sessionId: null,
         agentId: args.definition.agentId || input.agentConfig.id,
@@ -59,6 +70,9 @@ export function createTriggerDispatcher(input: TriggerDispatcherInput) {
         triggerMessageId: null,
         triggerUserId: null,
         timeoutSeconds: input.agentConfig.timeoutSeconds,
+        requestedSandboxMode: resolvedSandboxMode.requestedSandboxMode,
+        resolvedSandboxMode: resolvedSandboxMode.resolvedSandboxMode,
+        sandboxModeSource: resolvedSandboxMode.sandboxModeSource,
         requestedSessionMode: "fresh",
         requestedBridgeSessionId: null,
         deliveryTarget: resolveTriggerDeliveryTarget(args.definition),

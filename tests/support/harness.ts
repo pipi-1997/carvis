@@ -131,14 +131,28 @@ export function createHarness(options?: {
     ...inputAgentConfig,
     workspace: defaultWorkspacePath,
   };
+  const workspaceRegistry: RuntimeConfig["workspaceResolver"]["registry"] = {
+    [agentConfig.defaultWorkspace]: agentConfig.workspace,
+    ...options?.workspaceResolver?.registry,
+  };
   const workspaceResolverConfig: RuntimeConfig["workspaceResolver"] = {
-    registry: {
-      [agentConfig.defaultWorkspace]: agentConfig.workspace,
-      ...options?.workspaceResolver?.registry,
-    },
+    registry: workspaceRegistry,
     chatBindings: {
       ...options?.workspaceResolver?.chatBindings,
     },
+    sandboxModes: Object.fromEntries(
+      Object.keys(workspaceRegistry).map((workspaceKey) => [workspaceKey, "workspace-write"]),
+    ) as RuntimeConfig["workspaceResolver"]["sandboxModes"],
+    ...(options?.workspaceResolver?.sandboxModes
+      ? {
+          sandboxModes: {
+            ...Object.fromEntries(
+              Object.keys(workspaceRegistry).map((workspaceKey) => [workspaceKey, "workspace-write"]),
+            ),
+            ...options.workspaceResolver.sandboxModes,
+          } as RuntimeConfig["workspaceResolver"]["sandboxModes"],
+        }
+      : {}),
     managedWorkspaceRoot,
     templatePath: options?.workspaceResolver?.templatePath ?? `/tmp/carvis-template-${uniqueSuffix}`,
   };
@@ -346,6 +360,7 @@ export function createHarness(options?: {
     notifier,
     queue,
     repositories,
+    workspaceResolverConfig,
     now,
   });
   const triggerDefinitionSync = createTriggerDefinitionSync({

@@ -123,6 +123,7 @@ describe("postgres repositories", () => {
               workspace: "/Users/pipi/workspace/carvis",
               bridge: "codex",
               bridgeSessionId: "thread-001",
+              sandboxMode: "workspace-write",
               mode: "continuation",
               status: "bound",
               lastBoundAt: "2026-03-09T00:00:00.000Z",
@@ -149,6 +150,7 @@ describe("postgres repositories", () => {
       workspace: "/Users/pipi/workspace/carvis",
       bridge: "codex",
       bridgeSessionId: "thread-001",
+      sandboxMode: "workspace-write",
       mode: "continuation",
       status: "bound",
       lastBoundAt: "2026-03-09T00:00:00.000Z",
@@ -184,6 +186,7 @@ describe("postgres repositories", () => {
                 workspace: "/Users/pipi/workspace/carvis",
                 bridge: "codex",
                 bridgeSessionId: "thread-001",
+                sandboxMode: "danger-full-access",
                 mode: "continuation",
                 status: "bound",
                 lastBoundAt: "2026-03-09T00:00:00.000Z",
@@ -216,6 +219,7 @@ describe("postgres repositories", () => {
       },
       bridge: "codex",
       bridgeSessionId: "thread-001",
+      sandboxMode: "danger-full-access",
       status: "bound",
       now: new Date("2026-03-09T00:00:00.000Z"),
     });
@@ -228,6 +232,7 @@ describe("postgres repositories", () => {
       "/Users/pipi/workspace/carvis",
       "codex",
       "thread-001",
+      "danger-full-access",
       "continuation",
       "bound",
       "2026-03-09T00:00:00.000Z",
@@ -237,6 +242,65 @@ describe("postgres repositories", () => {
       null,
       null,
       null,
+      "2026-03-09T00:00:00.000Z",
+      "2026-03-09T00:00:00.000Z",
+    ]);
+  });
+
+  test("chat sandbox override 仓储会映射与写入过期时间和 mode", async () => {
+    const queries: Array<{ params?: unknown[]; sql: string }> = [];
+    const repositories = createPostgresRepositories({
+      async query<T>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return {
+          rows: [
+            {
+              sessionId: "session-1",
+              chatId: "oc_test_chat",
+              agentId: "codex-main",
+              workspace: "/Users/pipi/workspace/carvis",
+              sandboxMode: "danger-full-access",
+              expiresAt: "2026-03-09T00:30:00.000Z",
+              setByUserId: "user-001",
+              createdAt: "2026-03-09T00:00:00.000Z",
+              updatedAt: "2026-03-09T00:00:00.000Z",
+            },
+          ] as T[],
+        };
+      },
+    });
+
+    const override = await repositories.chatSandboxOverrides.upsertOverride({
+      sessionId: "session-1",
+      chatId: "oc_test_chat",
+      agentId: "codex-main",
+      workspace: "/Users/pipi/workspace/carvis",
+      sandboxMode: "danger-full-access",
+      expiresAt: "2026-03-09T00:30:00.000Z",
+      setByUserId: "user-001",
+      now: new Date("2026-03-09T00:00:00.000Z"),
+    });
+
+    expect(override).toEqual({
+      sessionId: "session-1",
+      chatId: "oc_test_chat",
+      agentId: "codex-main",
+      workspace: "/Users/pipi/workspace/carvis",
+      sandboxMode: "danger-full-access",
+      expiresAt: "2026-03-09T00:30:00.000Z",
+      setByUserId: "user-001",
+      createdAt: "2026-03-09T00:00:00.000Z",
+      updatedAt: "2026-03-09T00:00:00.000Z",
+    });
+    expect(queries[0]?.sql).toContain("INSERT INTO chat_sandbox_overrides");
+    expect(queries[0]?.params).toEqual([
+      "session-1",
+      "oc_test_chat",
+      "codex-main",
+      "/Users/pipi/workspace/carvis",
+      "danger-full-access",
+      "2026-03-09T00:30:00.000Z",
+      "user-001",
       "2026-03-09T00:00:00.000Z",
       "2026-03-09T00:00:00.000Z",
     ]);
@@ -544,6 +608,9 @@ describe("postgres repositories", () => {
                 triggerMessageId: null,
                 triggerUserId: null,
                 timeoutSeconds: 60,
+                requestedSandboxMode: "workspace-write",
+                resolvedSandboxMode: "workspace-write",
+                sandboxModeSource: "workspace_default",
                 requestedSessionMode: "fresh",
                 requestedBridgeSessionId: null,
                 resolvedBridgeSessionId: null,
@@ -579,6 +646,9 @@ describe("postgres repositories", () => {
       triggerMessageId: null,
       triggerUserId: null,
       timeoutSeconds: 60,
+      requestedSandboxMode: "workspace-write",
+      resolvedSandboxMode: "workspace-write",
+      sandboxModeSource: "workspace_default",
       requestedSessionMode: "fresh",
       requestedBridgeSessionId: null,
       deliveryTarget: {
@@ -591,6 +661,8 @@ describe("postgres repositories", () => {
     expect(run.sessionId).toBeNull();
     expect(run.triggerSource).toBe("scheduled_job");
     expect(run.triggerExecutionId).toBe("execution-1");
+    expect(run.resolvedSandboxMode).toBe("workspace-write");
+    expect(run.sandboxModeSource).toBe("workspace_default");
     expect(run.deliveryTarget).toEqual({
       kind: "feishu_chat",
       chatId: "oc_ops_group",

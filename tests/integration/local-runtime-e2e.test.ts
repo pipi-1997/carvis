@@ -104,6 +104,9 @@ function createSharedRuntimeFixture() {
         main: "/tmp/carvis-runtime-workspace",
       },
       chatBindings: {},
+      sandboxModes: {
+        main: "workspace-write" as const,
+      },
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-workspace-template",
     },

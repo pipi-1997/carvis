@@ -30,6 +30,7 @@ describe("runtime config", () => {
     expect(runtimeConfig.agent.id).toBe("codex-main");
     expect(runtimeConfig.agent.defaultWorkspace).toBe("main");
     expect(runtimeConfig.workspaceResolver.registry.main).toBe(runtimeConfig.agent.workspace);
+    expect(runtimeConfig.workspaceResolver.sandboxModes!.main).toBe("workspace-write");
     expect(runtimeConfig.gateway.port).toBe(8787);
     expect(runtimeConfig.feishu.allowFrom).toEqual(["*"]);
     expect(runtimeConfig.secrets.feishuAppId).toBe("cli_test_app");
@@ -67,6 +68,10 @@ describe("runtime config", () => {
         registry: {
           main: "/tmp/carvis-runtime-workspace",
           ops: "/tmp/other-workspace",
+        },
+        sandboxModes: {
+          main: "workspace-write",
+          ops: "danger-full-access",
         },
       },
     });
@@ -286,6 +291,43 @@ describe("runtime config", () => {
     );
   });
 
+  test("workspace sandboxModes 缺失默认工作区时拒绝加载", async () => {
+    const extraWorkspace = join("/tmp", `carvis-runtime-workspace-ops-${Date.now()}`);
+    const harness = await createRuntimeHarness({
+      config: {
+        workspaceResolver: {
+          registry: {
+            ops: extraWorkspace,
+          },
+        },
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+    await mkdir(extraWorkspace, { recursive: true });
+
+    await expect(loadRuntimeConfig({ env: harness.env })).rejects.toThrow(
+      "workspaceResolver.sandboxModes must define every workspace in workspaceResolver.registry",
+    );
+  });
+
+  test("workspace sandboxModes 引用不存在的 workspace key 时拒绝加载", async () => {
+    const harness = await createRuntimeHarness({
+      config: {
+        workspaceResolver: {
+          sandboxModes: {
+            main: "workspace-write",
+            ghost: "danger-full-access",
+          },
+        },
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+
+    await expect(loadRuntimeConfig({ env: harness.env })).rejects.toThrow(
+      "workspaceResolver.sandboxModes must only reference existing workspace keys",
+    );
+  });
+
   test("templatePath 缺失时仍可加载 runtime config", async () => {
     const harness = await createRuntimeHarness();
     cleanupCallbacks.push(harness.cleanup);
@@ -340,6 +382,9 @@ describe("runtime config", () => {
           main: externalWorkspace,
         },
         chatBindings: {},
+        sandboxModes: {
+          main: "workspace-write",
+        },
         managedWorkspaceRoot: harness.paths.managedWorkspaceRoot,
         templatePath: harness.paths.templateDir,
       },
@@ -394,6 +439,19 @@ describe("runtime config", () => {
     expect(agentScope).not.toBe(otherAgentScope);
     expect(agentScope).not.toBe(otherConfigScope);
   });
+
+  test("runtime fingerprint 对 workspace sandboxModes 敏感", () => {
+    const baseConfig = createRuntimeConfigFixture();
+    const changedConfig = createRuntimeConfigFixture({
+      workspaceResolver: {
+        sandboxModes: {
+          main: "danger-full-access",
+        },
+      },
+    });
+
+    expect(buildRuntimeFingerprint(baseConfig)).not.toBe(buildRuntimeFingerprint(changedConfig));
+  });
 });
 
 type RuntimeConfigOverrides = {
@@ -438,6 +496,9 @@ function createRuntimeConfigFixture(
         main: "/tmp/carvis-runtime-workspace",
       },
       chatBindings: {},
+      sandboxModes: {
+        main: "workspace-write",
+      },
       managedWorkspaceRoot: "/tmp/carvis-managed-workspaces",
       templatePath: "/tmp/carvis-template",
       ...overrides.workspaceResolver,

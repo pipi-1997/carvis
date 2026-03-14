@@ -117,6 +117,10 @@ describe("feishu bind command", () => {
         chatBindings: {
           "chat-ops": "ops",
         },
+        sandboxModes: {
+          main: "workspace-write",
+          ops: "workspace-write",
+        },
       },
     });
 
@@ -242,6 +246,10 @@ describe("feishu bind command", () => {
           main: "/tmp/carvis-workspace",
           ops: "/tmp/carvis-ops-workspace",
         },
+        sandboxModes: {
+          main: "workspace-write",
+          ops: "workspace-write",
+        },
       },
     });
 
@@ -306,5 +314,32 @@ describe("feishu bind command", () => {
         workspace: "/tmp/carvis-workspace",
       },
     ]);
+  });
+
+  test("/bind 切换 workspace 时会清除当前 chat 的 sandbox override", async () => {
+    const harness = createHarness({
+      workspaceResolver: {
+        registry: {
+          main: "/tmp/carvis-workspace",
+          ops: "/tmp/carvis-ops-workspace",
+        },
+      },
+    });
+
+    await harness.postFeishuText("/mode danger-full-access", {
+      chat_id: "chat-bind-override",
+      chat_type: "group",
+      message_id: "msg-mode-001",
+      user_id: "user-001",
+    });
+    await harness.postFeishuText("/bind ops", {
+      chat_id: "chat-bind-override",
+      chat_type: "group",
+      message_id: "msg-bind-002",
+      user_id: "user-001",
+    });
+
+    const session = await harness.repositories.sessions.getSessionByChat("feishu", "chat-bind-override");
+    expect(await harness.repositories.chatSandboxOverrides.getOverrideBySessionId(session!.id)).toBeNull();
   });
 });
