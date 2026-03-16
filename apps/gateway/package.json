@@ -1,6 +1,6 @@
 {
   "name": "@carvis/gateway",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "HTTP gateway process for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -16,7 +16,7 @@
   "private": false,
   "type": "module",
   "bin": {
-    "carvis-gateway": "./bin/carvis-gateway"
+    "carvis-gateway": "./bin/carvis-gateway.cjs"
   },
   "files": [
     "src",

@@ -1,6 +1,6 @@
 {
   "name": "@carvis/carvis-schedule-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Schedule management CLI surface for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -16,7 +16,7 @@
   "private": false,
   "type": "module",
   "bin": {
-    "carvis-schedule": "./bin/carvis-schedule"
+    "carvis-schedule": "./bin/carvis-schedule.cjs"
   },
   "files": [
     "src",

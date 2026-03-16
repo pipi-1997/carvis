@@ -1,6 +1,6 @@
 {
   "name": "@carvis/executor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Execution worker process for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -16,7 +16,7 @@
   "private": false,
   "type": "module",
   "bin": {
-    "carvis-executor": "./bin/carvis-executor"
+    "carvis-executor": "./bin/carvis-executor.cjs"
   },
   "files": [
     "src",

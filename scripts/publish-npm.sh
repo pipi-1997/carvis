@@ -2,11 +2,18 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OTP="${1:-}"
 
 cd "$ROOT_DIR"
 
 echo "== carvis npm publish helper =="
-echo "确保你已经在当前 shell 里执行过: npm login"
+if [ -n "$OTP" ]; then
+  echo "使用 OTP: ${OTP}"
+else
+  echo "用法: npm run publish:npm -- <otp>"
+  echo "  请提供你的 2FA 一次性验证码"
+  exit 1
+fi
 echo
 
 PACKAGES=(
@@ -40,7 +47,7 @@ for REL_PATH in "${PACKAGES[@]}"; do
   echo "    开始发布 ${NAME}@${VERSION} ..."
   (
     cd "${PKG_DIR}"
-    npm publish --access public
+    npm publish --access public --otp="$OTP"
   )
   echo "    发布完成 ${NAME}@${VERSION}"
 done
