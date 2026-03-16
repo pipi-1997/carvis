@@ -6,6 +6,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 echo "== carvis npm publish helper (登录链接方式) =="
+echo "== 发布前依赖自检 =="
+node ./scripts/check-publish-runtime-deps.mjs
+echo
 
 # 若未登录，使用浏览器登录链接（支持 Security Key 等）
 if ! npm whoami >/dev/null 2>&1; then

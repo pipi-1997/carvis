@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@carvis/bridge-codex": "0.1.0",
+    "@carvis/channel-feishu": "0.1.1",
     "@carvis/core": "0.1.1"
   },
   "scripts": {

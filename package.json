@@ -18,6 +18,7 @@
     "test:unit": "bun test tests/unit",
     "lint": "bunx tsc --noEmit",
     "test": "bun test",
+    "check:publish-deps": "node ./scripts/check-publish-runtime-deps.mjs",
     "publish:npm": "bash ./scripts/publish-npm.sh"
   },
   "devDependencies": {

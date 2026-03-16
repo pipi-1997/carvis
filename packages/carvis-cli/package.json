@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
+    "@carvis/bridge-codex": "0.1.1",
+    "@carvis/channel-feishu": "0.1.1",
     "@carvis/core": "0.1.1"
   }
 }
