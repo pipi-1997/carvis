@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { createRuntimeLogger, resolveScheduleManagementSocketPath } from "@carvis/core";
 
@@ -196,6 +198,44 @@ describe("gateway startup", () => {
     expect(scheduledTimers.map((timer) => timer.ms)).toEqual([1000, 1000]);
     await scheduledTimers[0]?.callback();
     expect(reaped).toBe(1);
+  });
+
+  test("CLI 场景下会把 gateway 状态写入本地 state sink", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+
+    const started = await startGateway({
+      env: {
+        ...harness.env,
+        CARVIS_LOG_PATH: join(harness.paths.configDir, "logs", "gateway.log"),
+        CARVIS_STATE_DIR: join(harness.paths.configDir, "state"),
+      },
+      createRuntimeServices: async () => createGatewayRuntimeServicesFixture({ logger: createRuntimeLogger() }),
+      createScheduleManagementIpcServer: async () => ({ socketPath: "test.sock", async stop() {} }),
+      createFeishuIngress: async () =>
+        createGatewayIngressFixture({
+          ready: true,
+        }),
+      serve: (options) => ({
+        port: Number(options.port),
+        stop() {},
+      }),
+    });
+    cleanupCallbacks.push(started.stop);
+
+    const persisted = JSON.parse(
+      await readFile(join(harness.paths.configDir, "state", "gateway.json"), "utf8"),
+    ) as {
+      status: string;
+      pid: number;
+      healthSnapshot: {
+        ready: boolean;
+      };
+    };
+
+    expect(persisted.status).toBe("ready");
+    expect(persisted.pid).toBeGreaterThan(0);
+    expect(persisted.healthSnapshot.ready).toBe(true);
   });
 
   test("scheduler tick 会为新创建的 workspace catalog entry 补齐 IPC worker", async () => {

@@ -1,0 +1,15 @@
+{
+  "name": "@carvis/carvis-cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "carvis": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@carvis/core": "workspace:*"
+  }
+}

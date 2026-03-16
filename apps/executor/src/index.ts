@@ -1,3 +1,5 @@
+import { createLocalRuntimeStateSink } from "@carvis/core";
+
 import { createExecutorWorker } from "./worker.ts";
 import { bootstrapExecutorRuntime, type BootstrapExecutorRuntimeOptions } from "./bootstrap.ts";
 import { evaluateExecutorReadiness } from "./services/runtime-readiness.ts";
@@ -10,6 +12,7 @@ type RunExecutorOptions = {
 };
 
 export async function runExecutor(options: RunExecutorOptions = {}) {
+  const stateSink = resolveExecutorStateSink(options.env);
   const runtime = await bootstrapExecutorRuntime({
     createBridge: options.createBridge,
     createRuntimeServices: options.createRuntimeServices,
@@ -30,6 +33,11 @@ export async function runExecutor(options: RunExecutorOptions = {}) {
       bridge: runtime.bridge,
       configFingerprint: runtime.services.configFingerprint,
       driftMessage: await runtime.detectConfigDrift(),
+      onReport: async (report) => {
+        await stateSink?.writeExecutorState({
+          startupReport: report,
+        });
+      },
       services: runtime.services,
     },
     "startup",
@@ -57,6 +65,11 @@ export async function runExecutor(options: RunExecutorOptions = {}) {
         bridge: runtime.bridge,
         configFingerprint: runtime.services.configFingerprint,
         driftMessage: await runtime.detectConfigDrift(),
+        onReport: async (nextReport) => {
+          await stateSink?.writeExecutorState({
+            startupReport: nextReport,
+          });
+        },
         services: runtime.services,
       },
       "runtime",
@@ -97,6 +110,9 @@ export async function runExecutor(options: RunExecutorOptions = {}) {
         clearInterval(timer);
       }
       await runtime.stop();
+      await stateSink?.writeStopped({
+        configFingerprint: runtime.services.configFingerprint,
+      });
     },
     tick,
   };
@@ -110,6 +126,61 @@ export async function startExecutor() {
 
 export { createExecutorWorker };
 
+type InstallSignalHandlersOptions = {
+  exit(code: number): void;
+  on(signal: "SIGINT" | "SIGTERM", handler: (signal: string) => void): void;
+  stderr?(text: string): void;
+  stop(): Promise<void>;
+};
+
+export function installExecutorSignalHandlers(options: InstallSignalHandlersOptions) {
+  let shuttingDown = false;
+
+  const handleSignal = async (signal: string) => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    try {
+      await options.stop();
+      options.exit(0);
+    } catch (error) {
+      const stderr = options.stderr ?? ((text: string) => process.stderr.write(text));
+      stderr(`failed to stop executor on ${signal}: ${error instanceof Error ? error.message : String(error)}\n`);
+      options.exit(1);
+    }
+  };
+
+  options.on("SIGINT", handleSignal);
+  options.on("SIGTERM", handleSignal);
+}
+
+function resolveExecutorStateSink(env: Record<string, string | undefined> = process.env) {
+  const stateDir = env.CARVIS_STATE_DIR;
+  if (!stateDir) {
+    return null;
+  }
+
+  return createLocalRuntimeStateSink({
+    logPath: env.CARVIS_LOG_PATH ?? "",
+    pid: process.pid,
+    role: "executor",
+    startedAt: new Date().toISOString(),
+    stateDir,
+  });
+}
+
 if (import.meta.main) {
-  await startExecutor();
+  const runtime = await startExecutor();
+  installExecutorSignalHandlers({
+    exit(code) {
+      process.exit(code);
+    },
+    on(signal, handler) {
+      process.on(signal, handler);
+    },
+    stop() {
+      return runtime.stop();
+    },
+  });
 }

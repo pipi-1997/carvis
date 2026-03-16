@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { RuntimeConfig, RuntimeServices } from "@carvis/core";
 import {
@@ -132,6 +134,38 @@ describe("executor startup", () => {
       errorMessage: "carvis-schedule unavailable: command not found",
     });
     expect(await executor.tick()).toBe(false);
+  });
+
+  test("CLI 场景下会把 executor startup report 写入本地 state sink", async () => {
+    const harness = await createRuntimeHarness();
+    cleanupCallbacks.push(harness.cleanup);
+
+    const runtimeServices = createFakeRuntimeServices(harness.env);
+    const executor = await runExecutor({
+      autoStartLoop: false,
+      createBridge: () => createBridge(),
+      createRuntimeServices: async () => runtimeServices,
+      env: {
+        ...harness.env,
+        CARVIS_LOG_PATH: join(harness.paths.configDir, "logs", "executor.log"),
+        CARVIS_STATE_DIR: join(harness.paths.configDir, "state"),
+      },
+    });
+    cleanupCallbacks.push(executor.stop);
+
+    const persisted = JSON.parse(
+      await readFile(join(harness.paths.configDir, "state", "executor.json"), "utf8"),
+    ) as {
+      status: string;
+      pid: number;
+      startupReport: {
+        status: string;
+      };
+    };
+
+    expect(persisted.status).toBe("ready");
+    expect(persisted.pid).toBeGreaterThan(0);
+    expect(persisted.startupReport.status).toBe("ready");
   });
 });
 

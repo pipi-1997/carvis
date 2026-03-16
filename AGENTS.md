@@ -32,6 +32,11 @@ tests/
 - `bun test`
 - `bun run test:unit`
 - `bun run lint`
+- `bun run --filter @carvis/carvis-cli carvis onboard`
+- `bun run --filter @carvis/carvis-cli carvis start`
+- `bun run --filter @carvis/carvis-cli carvis stop`
+- `bun run --filter @carvis/carvis-cli carvis status`
+- `bun run --filter @carvis/carvis-cli carvis doctor`
 - `bun run dev:gateway`
 - `bun run dev:executor`
 - `bun run start:gateway`
@@ -61,6 +66,10 @@ tests/
 - `/new` 当前会重置当前 `chat` 的续聊绑定并清除 sandbox override，但不会打断活动运行。
 - `/status` 当前返回 workspace、active run、最近一次请求是否排队、前方队列长度、续聊状态，以及当前 sandbox mode / 来源 / override 到期或已过期状态；不返回完整队列列表。
 - 本地 runtime 约定从 `~/.carvis/config.json` 读取结构化配置，并从 `POSTGRES_URL`、`REDIS_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 读取环境相关信息。
+- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，当前已支持 `carvis onboard/start/stop/status/doctor/configure`。
+- `carvis onboard` 会在完成 Feishu + runtime 依赖引导后自动继续执行 `carvis start`。
+- `packages/channel-feishu/src/setup.ts` 负责飞书 setup spec、字段说明、获取指引、输入校验和凭据 probe。
+- CLI 场景下，`gateway` 与 `executor` 会写入 `~/.carvis/state/gateway.json`、`~/.carvis/state/executor.json`，并支持 `SIGINT` / `SIGTERM` 优雅退出。
 - `CONFIG_DRIFT` 通过 Redis 中共享的 runtime fingerprint 检测；出现漂移时 `gateway /healthz` 降级，`executor` 拒绝消费。
 - 本机验证结果：
   - `bun run lint`

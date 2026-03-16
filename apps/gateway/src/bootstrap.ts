@@ -58,6 +58,7 @@ export type BootstrapGatewayRuntimeOptions = {
   createFeishuIngress?: ((
     options: Parameters<typeof createFeishuWebsocketIngress>[0],
   ) => Promise<ReturnType<typeof createFeishuWebsocketIngress>> | ReturnType<typeof createFeishuWebsocketIngress>);
+  healthOnStateChange?: Parameters<typeof createGatewayRuntimeHealth>[0]["onStateChange"];
   createRunReaper?: (
     input: Parameters<typeof createRunReaper>[0],
   ) => ReturnType<typeof createRunReaper>;
@@ -75,6 +76,7 @@ export async function bootstrapGatewayRuntime(options: BootstrapGatewayRuntimeOp
   });
   const health = createGatewayRuntimeHealth({
     configFingerprint: services.configFingerprint,
+    onStateChange: options.healthOnStateChange,
   });
   const sender = createFeishuRuntimeSender({
     appId: services.config.secrets.feishuAppId,

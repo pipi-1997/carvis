@@ -6,6 +6,7 @@ export * from "./observability/logger.ts";
 export * from "./observability/runtime-logger.ts";
 export * from "./runtime/cancel-signal.ts";
 export * from "./runtime/heartbeat.ts";
+export * from "./runtime/local-runtime-state.ts";
 export * from "./runtime/queue.ts";
 export * from "./runtime/redis-client.ts";
 export * from "./runtime/runtime-factory.ts";

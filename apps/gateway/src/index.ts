@@ -1,4 +1,4 @@
-import { resolveScheduleManagementSocketPath } from "@carvis/core";
+import { createLocalRuntimeStateSink, resolveScheduleManagementSocketPath } from "@carvis/core";
 
 import { createGatewayApp } from "./app.ts";
 import { bootstrapGatewayRuntime, type BootstrapGatewayRuntimeOptions } from "./bootstrap.ts";
@@ -26,8 +26,16 @@ type StartGatewayOptions = {
 };
 
 export async function startGateway(options: StartGatewayOptions = {}) {
+  const stateSink = resolveGatewayStateSink(options.env);
+  let stateWrite = Promise.resolve();
   const runtime = await bootstrapGatewayRuntime({
     createFeishuIngress: options.createFeishuIngress,
+    healthOnStateChange: (input) => {
+      if (!stateSink) {
+        return;
+      }
+      stateWrite = stateWrite.then(() => stateSink.writeGatewayState(input));
+    },
     createRunReaper: options.createRunReaper,
     createRuntimeServices: options.createRuntimeServices,
     env: options.env,
@@ -98,6 +106,7 @@ export async function startGateway(options: StartGatewayOptions = {}) {
     errorCode: runtime.health.state.lastError?.code,
     errorMessage: runtime.health.state.lastError?.message,
   });
+  await stateWrite;
 
   return {
     app: runtime.app,
@@ -115,12 +124,71 @@ export async function startGateway(options: StartGatewayOptions = {}) {
       }
       await runtime.stop();
       await server.stop?.();
+      await stateWrite;
+      await stateSink?.writeStopped({
+        configFingerprint: runtime.services.configFingerprint,
+      });
     },
   };
 }
 
 export { createGatewayApp };
 
+type InstallSignalHandlersOptions = {
+  exit(code: number): void;
+  on(signal: "SIGINT" | "SIGTERM", handler: (signal: string) => void): void;
+  stderr?(text: string): void;
+  stop(): Promise<void>;
+};
+
+export function installGatewaySignalHandlers(options: InstallSignalHandlersOptions) {
+  let shuttingDown = false;
+
+  const handleSignal = async (signal: string) => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    try {
+      await options.stop();
+      options.exit(0);
+    } catch (error) {
+      const stderr = options.stderr ?? ((text: string) => process.stderr.write(text));
+      stderr(`failed to stop gateway on ${signal}: ${error instanceof Error ? error.message : String(error)}\n`);
+      options.exit(1);
+    }
+  };
+
+  options.on("SIGINT", handleSignal);
+  options.on("SIGTERM", handleSignal);
+}
+
+function resolveGatewayStateSink(env: Record<string, string | undefined> = process.env) {
+  const stateDir = env.CARVIS_STATE_DIR;
+  if (!stateDir) {
+    return null;
+  }
+
+  return createLocalRuntimeStateSink({
+    logPath: env.CARVIS_LOG_PATH ?? "",
+    pid: process.pid,
+    role: "gateway",
+    startedAt: new Date().toISOString(),
+    stateDir,
+  });
+}
+
 if (import.meta.main) {
-  await startGateway();
+  const runtime = await startGateway();
+  installGatewaySignalHandlers({
+    exit(code) {
+      process.exit(code);
+    },
+    on(signal, handler) {
+      process.on(signal, handler);
+    },
+    stop() {
+      return runtime.stop();
+    },
+  });
 }

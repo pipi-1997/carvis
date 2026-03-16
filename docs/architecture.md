@@ -1,6 +1,6 @@
 # 架构图
 
-本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring`、`003-feishu-cardkit-results`、`004-codex-session-memory` 和 `007-agent-managed-scheduling` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现 + 同 chat Codex 原生 session 续聊 + CLI-first 的 schedule 管理控制面`。
+本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring`、`003-feishu-cardkit-results`、`004-codex-session-memory`、`007-agent-managed-scheduling` 和 `013-carvis-onboard-cli` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现 + 同 chat Codex 原生 session 续聊 + CLI-first 的 schedule 管理控制面 + operator-facing runtime CLI`。
 
 ## 1. 运行时拓扑（当前实现）
 
@@ -145,6 +145,10 @@ sequenceDiagram
 ## 3. 本地运行时约束
 
 - `gateway` 与 `executor` 现在按双进程运行，统一从 `~/.carvis/config.json` 和环境变量读取运行时配置。
+- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，负责 `carvis onboard/start/stop/status/doctor/configure`。
+- CLI 通过 `packages/channel-feishu/src/setup.ts` 读取 adapter-owned setup / doctor 信息，而不是把飞书配置逻辑塞进 `FeishuAdapter`。
+- CLI 场景下，`gateway` 和 `executor` 会把摘要状态写入 `~/.carvis/state/*.json`，供 `status` 与 `stop` 使用。
+- `apps/gateway` 与 `apps/executor` 在 `import.meta.main` 场景下都支持 `SIGINT` / `SIGTERM` 优雅退出。
 - `packages/channel-feishu` 负责 websocket 握手、allowlist / mention 过滤和 `InboundEnvelope` 归一化；这些细节不泄漏到 queue / run-flow。
 - `gateway` 在普通消息入队前会读取当前 `ConversationSessionBinding`，决定本轮 `RunRequest` 以 `fresh` 还是 `continuation` 模式进入执行链路；`/new` 只重置当前 `chat` 的续聊绑定，不打断活动运行。
 - `007-agent-managed-scheduling` 为普通消息新增了第二条控制面分支：

@@ -87,4 +87,48 @@ describe("gateway runtime health contract", () => {
       message: "gateway/executor runtime fingerprints differ",
     });
   });
+
+  test("状态变化时会通过回调发布最新 runtime 摘要", () => {
+    const snapshots: Array<{
+      status: string;
+      snapshot: {
+        state: {
+          ready: boolean;
+          config_fingerprint: string;
+          last_error: {
+            code: string;
+            message: string;
+          } | null;
+        };
+      };
+    }> = [];
+
+    const health = createGatewayRuntimeHealth({
+      configFingerprint: "fingerprint-001",
+      onStateChange(input) {
+        snapshots.push(input);
+      },
+    });
+
+    health.markHttpListening();
+    health.markFeishuReady();
+    health.markFeishuIngressReady();
+    health.markConfigDrift("gateway/executor runtime fingerprints differ");
+
+    expect(snapshots.at(-1)).toEqual(
+      expect.objectContaining({
+        status: "degraded",
+        snapshot: expect.objectContaining({
+          state: expect.objectContaining({
+            ready: false,
+            config_fingerprint: "fingerprint-001",
+            last_error: {
+              code: "CONFIG_DRIFT",
+              message: "gateway/executor runtime fingerprints differ",
+            },
+          }),
+        }),
+      }),
+    );
+  });
 });

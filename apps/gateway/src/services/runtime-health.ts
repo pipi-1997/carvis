@@ -2,6 +2,10 @@ import type { GatewayRuntimeState, RuntimeErrorState, RuntimeStatus } from "@car
 
 type GatewayRuntimeHealthOptions = {
   configFingerprint: string;
+  onStateChange?: (input: {
+    snapshot: GatewayRuntimeSnapshot;
+    status: RuntimeStatus;
+  }) => void;
 };
 
 type GatewayRuntimeSnapshot = {
@@ -37,15 +41,52 @@ export function createGatewayRuntimeHealth(options: GatewayRuntimeHealthOptions)
       state.lastError?.code !== "CONFIG_DRIFT";
   }
 
+  function snapshot(): GatewayRuntimeSnapshot {
+    return {
+      ok: true,
+      state: {
+        http_listening: state.httpListening,
+        config_valid: state.configValid,
+        feishu_ready: state.feishuReady,
+        feishu_ingress_ready: state.feishuIngressReady,
+        config_fingerprint: state.configFingerprint,
+        ready: state.ready,
+        last_error: state.lastError,
+      },
+    };
+  }
+
+  function status(): RuntimeStatus {
+    if (!state.configValid || state.lastError?.code === "INVALID_CONFIG") {
+      return "failed";
+    }
+    if (state.ready) {
+      return "ready";
+    }
+    if (state.lastError) {
+      return "degraded";
+    }
+    return "starting";
+  }
+
+  function publishState() {
+    options.onStateChange?.({
+      snapshot: snapshot(),
+      status: status(),
+    });
+  }
+
   function setError(error: RuntimeErrorState | null) {
     state.lastError = error;
     recalculateReady();
+    publishState();
   }
 
   return {
     markHttpListening(value = true) {
       state.httpListening = value;
       recalculateReady();
+      publishState();
     },
     markConfigInvalid(message: string) {
       state.configValid = false;
@@ -57,10 +98,12 @@ export function createGatewayRuntimeHealth(options: GatewayRuntimeHealthOptions)
     markFeishuReady(value = true) {
       state.feishuReady = value;
       recalculateReady();
+      publishState();
     },
     markFeishuIngressReady(value = true) {
       state.feishuIngressReady = value;
       recalculateReady();
+      publishState();
     },
     markFeishuDisconnected(message: string) {
       state.feishuIngressReady = false;
@@ -81,32 +124,8 @@ export function createGatewayRuntimeHealth(options: GatewayRuntimeHealthOptions)
     clearError() {
       setError(null);
     },
-    snapshot(): GatewayRuntimeSnapshot {
-      return {
-        ok: true,
-        state: {
-          http_listening: state.httpListening,
-          config_valid: state.configValid,
-          feishu_ready: state.feishuReady,
-          feishu_ingress_ready: state.feishuIngressReady,
-          config_fingerprint: state.configFingerprint,
-          ready: state.ready,
-          last_error: state.lastError,
-        },
-      };
-    },
-    status(): RuntimeStatus {
-      if (!state.configValid || state.lastError?.code === "INVALID_CONFIG") {
-        return "failed";
-      }
-      if (state.ready) {
-        return "ready";
-      }
-      if (state.lastError) {
-        return "degraded";
-      }
-      return "starting";
-    },
+    snapshot,
+    status,
     state,
   };
 }

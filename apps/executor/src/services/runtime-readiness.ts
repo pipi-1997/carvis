@@ -5,6 +5,7 @@ type ExecutorReadinessOptions = {
   bridge: Pick<CodexBridge, "healthcheck">;
   configFingerprint: string;
   driftMessage?: string | null;
+  onReport?: (report: ExecutorStartupReport) => void | Promise<void>;
   services: {
     postgres: {
       ping(): Promise<boolean>;
@@ -62,7 +63,7 @@ export async function evaluateExecutorReadiness(
     mode,
   });
 
-  return {
+  const report: ExecutorStartupReport = {
     role: "executor",
     status,
     configFingerprint: options.configFingerprint,
@@ -73,6 +74,10 @@ export async function evaluateExecutorReadiness(
     errorCode,
     errorMessage,
   };
+
+  await options.onReport?.(report);
+
+  return report;
 }
 
 function resolveRuntimeStatus(input: {
