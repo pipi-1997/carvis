@@ -13,15 +13,18 @@
 
 1. [../guides/operator-handbook.md](../guides/operator-handbook.md)
 2. 如涉及 schedule，再看 [schedule-management.md](schedule-management.md)
+3. 如需查命令 / 配置细节，再看：
+   - [../reference/reference-cli.md](../reference/reference-cli.md)
+   - [../reference/reference-config.md](../reference/reference-config.md)
 
 ## 高速索引
 
-- 首次引导：`carvis onboard`
-- 启动：`carvis start`
-- 停止：`carvis stop`
-- 状态：`carvis status`
-- 体检：`carvis doctor`
-- 局部重配：`carvis configure feishu`、`carvis configure workspace`
+- 首次引导：`bun run --filter @carvis/carvis-cli carvis onboard`
+- 启动：`bun run --filter @carvis/carvis-cli carvis start`
+- 停止：`bun run --filter @carvis/carvis-cli carvis stop`
+- 状态：`bun run --filter @carvis/carvis-cli carvis status`
+- 体检：`bun run --filter @carvis/carvis-cli carvis doctor`
+- 局部重配：`bun run --filter @carvis/carvis-cli carvis configure feishu`、`bun run --filter @carvis/carvis-cli carvis configure workspace`
 
 ## Ready 判定
 
@@ -47,3 +50,5 @@
 - `~/.carvis/state/executor.json`
 - `~/.carvis/logs/gateway.log`
 - `~/.carvis/logs/executor.log`
+
+更完整的文件说明见 [../reference/reference-config.md](../reference/reference-config.md)。

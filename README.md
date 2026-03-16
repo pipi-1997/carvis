@@ -1,36 +1,33 @@
 # carvis
 
-`carvis` 是一个面向本地运行时的 Feishu + Codex agent 系统。当前实现聚焦单机双进程 runtime、固定 workspace 执行、同 chat 续聊、sandbox mode 控制，以及基于 `carvis-schedule` 的调度管理。
+`carvis` 把 Feishu 对话、Codex 执行和本地双进程 runtime 串起来，提供一条面向 operator 的 agent 运行路径。它的重点不是“做一个通用聊天机器人”，而是让你能在本机可控地运行、排障和管理一个带续聊、sandbox mode 和 schedule 管理能力的工作流 agent。
 
-## 当前范围
+## 适合谁
 
-- Feishu `websocket` 入站与消息发送
-- `Codex CLI` 新会话与续聊执行
-- `gateway` + `executor` 双进程本地 runtime
-- 单 workspace 单活动运行与显式队列 / 锁语义
-- `/bind`、`/status`、`/mode`、`/new`、`/abort` 命令
-- 运行中卡片、终态摘要卡与异常兜底消息
-- operator-facing `carvis onboard/start/stop/status/doctor/configure`
+- 想把 Feishu 群聊接到本地 `Codex CLI`
+- 想保留本地 runtime、Postgres、Redis 和日志可见性
+- 想要同 chat 续聊、单 workspace 串行执行和显式 sandbox 控制
+- 想把提醒 / 调度管理交给 agent，但仍保留 operator 侧的控制面和排障面
 
-不在当前范围内：
+不太适合：
 
-- 多渠道适配器
-- 云端托管部署说明
-- 远期 roadmap 或未落地 spec 的完整实现说明
+- 想直接用托管 SaaS
+- 想要多渠道、多模型、多租户平台能力
+- 只需要一个轻量 webhook bot，而不需要 run lifecycle、锁、队列和 operator CLI
 
-## 快速开始
+## Installation
 
 ### 1. 准备依赖
 
-在本机先确认以下条件：
+先确认本机具备：
 
 - `bun --version`
 - `codex --version`
 - 可访问的 PostgreSQL
 - 可访问的 Redis
-- 已配置好 Feishu 应用并启用 `websocket` 长连接事件订阅
+- 已配置好 Feishu 应用，并启用 `websocket` 长连接事件订阅
 
-### 2. 安装依赖
+### 2. 安装仓库依赖
 
 ```bash
 bun install
@@ -44,109 +41,100 @@ bun install
 bun run --filter @carvis/carvis-cli carvis onboard
 ```
 
-该命令会：
+它会：
 
-- 收集 Feishu 与 runtime 所需配置
+- 收集 Feishu 和 runtime 所需配置
 - 写出 `~/.carvis/config.json` 与 `~/.carvis/runtime.env`
 - 自动继续执行 `carvis start`
 
-### 4. 日常运维
+更完整的安装与运维路径见 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)。
+
+## Get Started
+
+### 本地 runtime
 
 ```bash
 bun run --filter @carvis/carvis-cli carvis status
 bun run --filter @carvis/carvis-cli carvis doctor
-bun run --filter @carvis/carvis-cli carvis stop
-bun run --filter @carvis/carvis-cli carvis start
 ```
 
-更详细的 operator 路径见 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)。
+### Feishu 会话内
 
-## Feishu 会话命令
-
-- `/help` 查看帮助
-- `/bind <workspace-key>` 绑定或切换当前 chat 的 workspace
-- `/status` 查看当前会话状态、队列位置和 sandbox 信息
-- `/mode` 查看当前会话 sandbox mode
-- `/mode workspace-write` / `/mode danger-full-access` 设置 30 分钟 override
-- `/mode reset` 清除当前会话 override
-- `/new` 重置当前 chat 的续聊绑定并清除 override
-- `/abort` 取消当前活动运行
-
-## 核心能力与边界
-
-### 运行时边界
-
-- 保持 `ChannelAdapter` 与 `AgentBridge` 边界清晰
-- Postgres 负责 durable state，Redis 只负责协调
-- 每个 workspace 同时只允许一个 active run
-- lifecycle、heartbeat、日志与 operator 可见状态是稳定约束
-
-### 当前实现要点
-
-- 普通消息会按 chat 读取 `ConversationSessionBinding`，默认续用底层 Codex session
-- 当续聊 session 失效时，`executor` 会在同一 run 内自动 fresh 重试一次
-- sandbox mode 支持 workspace 默认值和 chat 级临时 override
-- schedule 管理必须通过 `carvis-schedule` 完成，而不是直接写持久化层
-
-更完整的实现说明见 [docs/architecture.md](docs/architecture.md)。
-
-## 仓库结构
+在群聊里先绑定 workspace：
 
 ```text
-apps/
-  gateway/     Feishu ingress、命令路由、呈现编排、内部管理面
-  executor/    队列消费、工作区锁、Codex bridge 驱动、heartbeat
-packages/
-  core/                领域模型、配置、持久化、runtime 组装
-  channel-feishu/      渠道适配、sender、websocket ingress、setup/doctor
-  bridge-codex/        Codex CLI bridge 与测试 transport
-  carvis-cli/          operator-facing runtime CLI
-  carvis-schedule-cli/ schedule 管理 CLI
-tests/
-  contract/ integration/ unit/
-docs/
-  architecture.md
-  guides/
-  runbooks/
-  plans/
-specs/
+/bind <workspace-key>
 ```
 
-## 常用命令
+日常高频命令：
 
-### 开发
+- `/status`
+- `/mode`
+- `/new`
+- `/abort`
 
-```bash
-bun run dev:gateway
-bun run dev:executor
+完整指令说明见 [docs/reference/reference-chat-commands.md](docs/reference/reference-chat-commands.md)。
+
+## Why carvis
+
+- 本地可控 runtime
+  - `gateway` 和 `executor` 双进程运行，配置、状态和日志都在本地可见
+- 同 chat 续聊
+  - 默认续用底层 Codex session，`/new` 可显式重置
+- 单 workspace 串行执行
+  - 每个 workspace 同时只允许一个 active run，并保留显式队列 / 锁语义
+- sandbox mode 可控
+  - 既有 workspace 默认 mode，也支持 chat 级临时 override
+- schedule 管理可交给 agent
+  - 通过 `carvis-schedule` 控制面完成 create / list / update / disable
+- operator 友好
+  - 自带 `onboard/start/stop/status/doctor/configure` 和专题 runbook
+
+## Choose Your Path
+
+- 我想先把系统跑起来
+  - 看 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)
+- 我想理解当前实现和边界
+  - 看 [docs/architecture.md](docs/architecture.md)
+- 我想开始改代码
+  - 看 [docs/guides/developer-onboarding.md](docs/guides/developer-onboarding.md)
+- 我想查稳定命令 / 配置 / 会话指令
+  - 看 [docs/reference/reference-cli.md](docs/reference/reference-cli.md)
+  - 看 [docs/reference/reference-config.md](docs/reference/reference-config.md)
+  - 看 [docs/reference/reference-chat-commands.md](docs/reference/reference-chat-commands.md)
+- 我想做专题排障
+  - 看 [docs/runbooks/schedule-management.md](docs/runbooks/schedule-management.md)
+
+完整文档路由见 [docs/index.md](docs/index.md)。
+
+## Current Scope
+
+当前实现包括：
+
+- Feishu `websocket` 入站与消息发送
+- `Codex CLI` 新会话与续聊执行
+- `gateway` + `executor` 双进程本地 runtime
+- 单 workspace 单活动运行与显式队列 / 锁语义
+- `/bind`、`/status`、`/mode`、`/new`、`/abort`
+- 运行中卡片、终态摘要卡和异常兜底消息
+- operator-facing `carvis onboard/start/stop/status/doctor/configure`
+
+当前不包括：
+
+- 多渠道适配器
+- 云端托管部署说明
+- 未落地 spec 的完整产品化能力
+
+## Repo Snapshot
+
+```text
+apps/        gateway + executor
+packages/    core, channel-feishu, bridge-codex, carvis-cli, carvis-schedule-cli
+tests/       unit, contract, integration
+docs/        guides, reference, runbooks, plans, architecture
+specs/       设计档案
 ```
-
-### 测试与检查
-
-```bash
-bun run lint
-bun run test:unit
-bun test
-```
-
-### 本地 runtime CLI
-
-```bash
-bun run --filter @carvis/carvis-cli carvis onboard
-bun run --filter @carvis/carvis-cli carvis start
-bun run --filter @carvis/carvis-cli carvis stop
-bun run --filter @carvis/carvis-cli carvis status
-bun run --filter @carvis/carvis-cli carvis doctor
-```
-
-## 文档导航
-
-- [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)：operator 主手册，覆盖安装、启动、状态检查、重配和排障
-- [docs/index.md](docs/index.md)：docs 总入口，适合新开发者按主题进入
-- [docs/architecture.md](docs/architecture.md)：当前实现架构、拓扑和请求执行流
-- [docs/runbooks/schedule-management.md](docs/runbooks/schedule-management.md)：schedule 管理专题 runbook
-- [AGENTS.md](AGENTS.md)：仓库开发约束、测试要求和近期实现说明
 
 ## 开发说明
 
-本仓库以中文文档为主。涉及运行生命周期、adapter、bridge 或 run-flow 的变更时，需同步补齐 contract 和 integration coverage，相关约束见 [AGENTS.md](AGENTS.md)。
+本仓库以中文文档为主。涉及运行生命周期、adapter、bridge 或 run-flow 的变更时，需同步补齐 contract 和 integration coverage，详细约束见 [AGENTS.md](AGENTS.md)。
