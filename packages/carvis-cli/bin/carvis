@@ -1,10 +1,27 @@
 #!/bin/sh
 
-# 通过 node 解析已安装的 @carvis/carvis-cli 包根目录，避免依赖 bin 实际落点
-PKG_DIR=$(node -p "require.resolve('@carvis/carvis-cli/package.json').replace(/[/\\\\]package\\.json$/, '')" 2>/dev/null)
+# 解析当前脚本真实路径，兼容全局 npm symlink 安装
+SCRIPT_PATH="$0"
+if [ -L "$SCRIPT_PATH" ]; then
+  # 跟随一次 symlink（npm 全局安装场景下通常足够）
+  TARGET="$(readlink "$SCRIPT_PATH")"
+  case "$TARGET" in
+    /*) SCRIPT_PATH="$TARGET" ;;
+    *) SCRIPT_DIR_TMP=$(CDPATH= cd -- "$(dirname "$SCRIPT_PATH")" && pwd)
+       SCRIPT_PATH="$SCRIPT_DIR_TMP/$TARGET"
+       ;;
+  esac
+fi
 
-if [ -z "$PKG_DIR" ]; then
-  echo "error: cannot resolve @carvis/carvis-cli package. Is it installed correctly?" >&2
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$SCRIPT_PATH")" && pwd)
+
+# 全局安装时结构通常是：
+#   $PREFIX/lib/node_modules/@carvis/carvis-cli/bin/carvis
+# 包根目录就是 bin 的上一级
+PKG_DIR="$SCRIPT_DIR/.."
+
+if [ ! -f "$PKG_DIR/src/bin.ts" ]; then
+  echo "error: cannot locate carvis cli entry at \"$PKG_DIR/src/bin.ts\". Is @carvis/carvis-cli installed correctly?" >&2
   exit 1
 fi
 
