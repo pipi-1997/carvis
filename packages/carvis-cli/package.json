@@ -1,6 +1,6 @@
 {
   "name": "@carvis/carvis-cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Operator-facing CLI for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -30,6 +30,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@carvis/core": "0.1.0"
+    "@carvis/core": "0.1.1"
   }
 }

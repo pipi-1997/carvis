@@ -1,6 +1,6 @@
 {
   "name": "@carvis/gateway",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "HTTP gateway process for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@carvis/channel-feishu": "0.1.0",
-    "@carvis/core": "0.1.0",
+    "@carvis/core": "0.1.1",
     "hono": "^4.12.5"
   },
   "scripts": {

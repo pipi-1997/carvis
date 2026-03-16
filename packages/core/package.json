@@ -1,6 +1,6 @@
 {
   "name": "@carvis/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Core types, domain model, and runtime primitives for the carvis operator runtime.",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,9 @@
   ],
   "private": false,
   "type": "module",
+  "dependencies": {
+    "redis": "^5.8.2"
+  },
   "files": [
     "src"
   ],
