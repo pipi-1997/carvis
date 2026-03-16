@@ -13,7 +13,7 @@
 3. 确认目标 Feishu `chat` 已执行 `/bind <workspace-key>`
 4. 确认 `gateway /healthz` 为 ready，且 executor 已进入 `consumerActive = true`
 5. 如需验证 `config` baseline 的 override，先在 runtime config 的 `triggers.scheduledJobs` 中声明目标任务
-6. 确认宿主 `Codex` 运行环境可以直接执行 `carvis-schedule --help`
+6. 确认 `carvis doctor` 已通过；如需手工验证 schedule CLI，可在仓库根目录执行 `./packages/carvis-schedule-cli/bin/carvis-schedule --help`
 
 ## 3. 核心链路
 
@@ -49,16 +49,17 @@
   1. 检查 gateway 进程是否在线
   2. 优先检查当前会话运行时上下文是否已正确注入，以及 `carvis-schedule list` 是否可在同一宿主直接执行
   3. 若正在做人工排障或脱离正常 agent 路径执行，再检查 `CARVIS_GATEWAY_BASE_URL` 等调试覆盖项
-  3. 重新查看 `/internal/managed-schedules`，确认没有意外写入 action / override
+  4. 重新查看 `/internal/managed-schedules`，确认没有意外写入 action / override
 
 ### 5.3 `carvis-schedule` 不可执行
 
 - 现象：executor 启动即报 `CODEX_UNAVAILABLE`
 - 预期：这是宿主 `Codex` 运行环境里 `carvis-schedule` 不可执行，不应继续做聊天重试
 - 处理：
-  1. 先执行 `carvis-schedule --help`
-  2. 再确认 `PATH` 中包含 `packages/carvis-schedule-cli/bin`
-  3. 只有当 CLI readiness probe 通过后，才继续做聊天验证
+  1. 先执行 `bun run --filter @carvis/carvis-cli carvis doctor`
+  2. 如需手工验证，再在仓库根目录执行 `./packages/carvis-schedule-cli/bin/carvis-schedule --help`
+  3. 若仍失败，检查本机 Bun 运行环境与仓库依赖是否完整
+  4. 只有当 CLI readiness probe 通过后，才继续做聊天验证
 
 ### 5.4 时间表达被拒绝
 
