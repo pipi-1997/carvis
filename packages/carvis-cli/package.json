@@ -1,6 +1,6 @@
 {
   "name": "@carvis/carvis-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Operator-facing CLI for the carvis runtime.",
   "license": "MIT",
   "repository": {

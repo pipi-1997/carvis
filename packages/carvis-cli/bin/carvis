@@ -1,3 +1,11 @@
 #!/bin/sh
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-exec bun --bun "$SCRIPT_DIR/../src/bin.ts" "$@"
+
+# 通过 node 解析已安装的 @carvis/carvis-cli 包根目录，避免依赖 bin 实际落点
+PKG_DIR=$(node -p "require.resolve('@carvis/carvis-cli/package.json').replace(/[/\\\\]package\\.json$/, '')" 2>/dev/null)
+
+if [ -z "$PKG_DIR" ]; then
+  echo "error: cannot resolve @carvis/carvis-cli package. Is it installed correctly?" >&2
+  exit 1
+fi
+
+exec bun --bun "$PKG_DIR/src/bin.ts" "$@"
