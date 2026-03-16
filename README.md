@@ -27,18 +27,20 @@
 - 可访问的 Redis
 - 已配置好 Feishu 应用，并启用 `websocket` 长连接事件订阅
 
-### 2. 安装仓库依赖
+### 2. 全局安装 carvis CLI（推荐）
+
+如果你只关心「把 carvis 当成一个可用的工具」，而不是立刻修改源码，可以直接通过 npm / pnpm 安装全局 CLI：
 
 ```bash
-bun install
+npm install -g @carvis/carvis-cli@latest
+# or:
+pnpm add -g @carvis/carvis-cli@latest
 ```
 
-### 3. 首次引导
-
-在仓库根目录执行：
+安装完成后，直接在终端里运行：
 
 ```bash
-bun run --filter @carvis/carvis-cli carvis onboard
+carvis onboard
 ```
 
 它会：
@@ -47,7 +49,28 @@ bun run --filter @carvis/carvis-cli carvis onboard
 - 写出 `~/.carvis/config.json` 与 `~/.carvis/runtime.env`
 - 自动继续执行 `carvis start`
 
+后续常用命令也直接使用全局 `carvis` 即可，例如：
+
+```bash
+carvis status
+carvis doctor
+```
+
 更完整的安装与运维路径见 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)。
+
+### 3. 仓库内开发者安装路径（可选）
+
+如果你要在本仓库里开发 / 调试 carvis，而不是只用发布版 CLI，可以按传统 workspace 方式安装依赖：
+
+```bash
+bun install
+```
+
+然后使用 workspace 内的 CLI 入口，这在本地开发时更方便：
+
+```bash
+bun run --filter @carvis/carvis-cli carvis onboard
+```
 
 ## Get Started
 

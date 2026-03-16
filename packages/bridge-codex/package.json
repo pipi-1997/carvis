@@ -1,9 +1,28 @@
 {
   "name": "@carvis/bridge-codex",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Codex bridge and transport layer for the carvis runtime.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carvis-dev/carvis.git"
+  },
+  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "keywords": [
+    "carvis",
+    "codex",
+    "bridge"
+  ],
+  "private": false,
   "type": "module",
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@carvis/core": "workspace:*"
+    "@carvis/core": "0.1.0"
   },
   "exports": {
     ".": "./src/index.ts",

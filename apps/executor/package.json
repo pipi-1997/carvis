@@ -1,10 +1,33 @@
 {
   "name": "@carvis/executor",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Execution worker process for the carvis runtime.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carvis-dev/carvis.git"
+  },
+  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "keywords": [
+    "carvis",
+    "executor",
+    "runtime"
+  ],
+  "private": false,
   "type": "module",
+  "bin": {
+    "carvis-executor": "./bin/carvis-executor"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@carvis/bridge-codex": "workspace:*",
-    "@carvis/core": "workspace:*"
+    "@carvis/bridge-codex": "0.1.0",
+    "@carvis/core": "0.1.0"
   },
   "scripts": {
     "dev": "bun run src/index.ts"

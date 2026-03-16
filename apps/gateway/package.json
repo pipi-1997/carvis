@@ -1,10 +1,33 @@
 {
   "name": "@carvis/gateway",
-  "private": true,
+  "version": "0.1.0",
+  "description": "HTTP gateway process for the carvis runtime.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carvis-dev/carvis.git"
+  },
+  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "keywords": [
+    "carvis",
+    "gateway",
+    "runtime"
+  ],
+  "private": false,
   "type": "module",
+  "bin": {
+    "carvis-gateway": "./bin/carvis-gateway"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@carvis/channel-feishu": "workspace:*",
-    "@carvis/core": "workspace:*",
+    "@carvis/channel-feishu": "0.1.0",
+    "@carvis/core": "0.1.0",
     "hono": "^4.12.5"
   },
   "scripts": {

@@ -1,15 +1,35 @@
 {
   "name": "@carvis/carvis-cli",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Operator-facing CLI for the carvis runtime.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carvis-dev/carvis.git"
+  },
+  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "keywords": [
+    "carvis",
+    "cli",
+    "operator"
+  ],
+  "private": false,
   "type": "module",
   "bin": {
-    "carvis": "./src/bin.ts"
+    "carvis": "./bin/carvis"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@carvis/core": "workspace:*"
+    "@carvis/core": "0.1.0"
   }
 }
