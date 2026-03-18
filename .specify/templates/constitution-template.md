@@ -1,12 +1,12 @@
-# [PROJECT_NAME] 宪法
-<!-- 例如：Spec Constitution、TaskFlow Constitution 等 -->
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
-## 核心原则
+## Core Principles
 
 ### [PRINCIPLE_1_NAME]
-<!-- 例如：I. Library-First -->
+<!-- Example: I. Library-First -->
 [PRINCIPLE_1_DESCRIPTION]
-<!-- 例如：每个功能都从可独立测试、可文档化的模块开始 -->
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
 
 ### [PRINCIPLE_2_NAME]
 <!-- Example: II. CLI Interface -->
@@ -29,7 +29,7 @@
 <!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
 ## [SECTION_2_NAME]
-<!-- 例如：附加约束、安全要求、性能标准等 -->
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 
 [SECTION_2_CONTENT]
 <!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
@@ -40,8 +40,8 @@
 [SECTION_3_CONTENT]
 <!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
 
-## 治理
-<!-- 例如：宪法优先于其他实践；修订需要文档、审批和迁移计划 -->
+## Governance
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
 [GOVERNANCE_RULES]
 <!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->

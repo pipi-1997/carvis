@@ -1,15 +1,15 @@
-# 实施计划：[FEATURE]
+# Implementation Plan: [FEATURE]
 
-**分支**: `[###-feature-name]` | **日期**: [DATE] | **规格说明**: [link]
-**输入**: 来自 `/specs/[###-feature-name]/spec.md` 的功能规格说明
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**说明**: 本模板由 `/speckit.plan` 命令填充。执行流程见 `.specify/templates/plan-template.md`。
+**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
-## 摘要
+## Summary
 
-[从功能规格中提炼核心需求，并结合 research.md 总结技术方案]
+[Extract from feature spec: primary requirement + technical approach from research]
 
-## 技术上下文
+## Technical Context
 
 <!--
   ACTION REQUIRED: Replace the content in this section with the technical details
@@ -17,39 +17,25 @@
   the iteration process.
 -->
 
-- **语言/版本**: [例如 Bun 1.x、TypeScript 5.x，或 NEEDS CLARIFICATION]
-- **主要依赖**: [例如 Hono、PostgreSQL client、Redis client，或 NEEDS CLARIFICATION]
-- **存储**: [PostgreSQL、Redis、files 或 N/A]
-- **测试**: [例如 bun test、Vitest、Playwright，或 NEEDS CLARIFICATION]
-- **目标平台**: [例如 Linux server、internal admin web、webhook runtime，或 NEEDS CLARIFICATION]
-- **项目类型**: [gateway、executor、shared package、adapter package、bridge package，或 NEEDS CLARIFICATION]
-- **渠道范围**: [Telegram、Feishu、scheduler、webhook、admin UI，或 UNAFFECTED]
-- **智能体范围**: [Claude Code、Codex，或 UNAFFECTED]
-- **运行拓扑**: [gateway、executor、queue、locks、heartbeat impact，或 UNAFFECTED]
-- **可观测性**: [logs、metrics、admin states、alerts，或 NEEDS CLARIFICATION]
-- **性能目标**: [例如 delivery latency、queue depth、admin refresh SLA，或 NEEDS CLARIFICATION]
-- **约束条件**: [例如 one active run per workspace、webhook-only inbound、host-local workspaces]
-- **规模/范围**: [例如 number of workspaces、channels、executors，或 NEEDS CLARIFICATION]
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
-## 宪法检查
+## Constitution Check
 
-*门禁：在 Phase 0 research 开始前必须通过；在 Phase 1 design 后重新检查。*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- [ ] **Boundary Integrity**: Impacted `ChannelAdapter`, `AgentBridge`, `apps/*`, and `packages/*`
-      changes are explicit, and no direct channel-specific or agent-specific control flow leaks
-      into shared runtime code.
-- [ ] **Durable Lifecycle**: Canonical entities, run events, persistence effects, and admin
-      visibility changes are documented for this feature.
-- [ ] **Workspace Safety**: Locking, queueing, cancellation, timeout, and heartbeat behavior are
-      defined or explicitly confirmed unchanged.
-- [ ] **Operability**: Logging, retries, notifications, and operator/runbook effects are
-      described for every changed execution path.
-- [ ] **Verification**: Contract tests and integration tests are identified for each affected
-      adapter, bridge, or run-lifecycle seam.
+[Gates determined based on constitution file]
 
-## 项目结构
+## Project Structure
 
-### 文档产物（本功能）
+### Documentation (this feature)
 
 ```text
 specs/[###-feature]/
@@ -61,34 +47,58 @@ specs/[###-feature]/
 └── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
 ```
 
-### 源码结构（仓库根目录）
+### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-apps/
-├── gateway/
-└── executor/
-
-packages/
-├── core/
-├── channel-telegram/
-├── channel-feishu/
-├── bridge-claude-code/
-└── bridge-codex/
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
 
 tests/
 ├── contract/
 ├── integration/
 └── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**结构决策**: [说明本功能会修改哪些已有 app/package 目录以及原因。如果需要新增包，
-必须结合 Constitution Check 说明其必要性。]
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
-## 复杂度追踪
+## Complexity Tracking
 
-> **仅当宪法检查存在必须说明的例外时填写**
+> **Fill ONLY if Constitution Check has violations that must be justified**
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., new adapter package] | [current need] | [why existing packages cannot host it cleanly] |
-| [e.g., extra queue or lock path] | [specific problem] | [why existing run pipeline is insufficient] |
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
