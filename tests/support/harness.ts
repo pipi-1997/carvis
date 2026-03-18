@@ -18,6 +18,7 @@ import { CodexBridge, createScriptedCodexTransport } from "../../packages/bridge
 import type { CodexTransport } from "../../packages/bridge-codex/src/bridge.ts";
 import { runCarvisScheduleCli } from "../../packages/carvis-schedule-cli/src/index.ts";
 import { FeishuAdapter } from "../../packages/channel-feishu/src/adapter.ts";
+import { FeishuMediaStageError } from "../../packages/channel-feishu/src/runtime-sender.ts";
 import type { AgentConfig, OutboundMessage, RunRequest, RunStatus } from "../../packages/core/src/domain/models.ts";
 import type { RuntimeConfig } from "../../packages/core/src/domain/runtime-models.ts";
 import { createRuntimeLogger } from "../../packages/core/src/observability/runtime-logger.ts";
@@ -107,6 +108,10 @@ export function createHarness(options?: {
   workspaceResolver?: Partial<RuntimeConfig["workspaceResolver"]>;
   delivery?: {
     failSendMessage?: boolean;
+    failUploadFile?: boolean;
+    failUploadImage?: boolean;
+    failSendFile?: boolean;
+    failSendImage?: boolean;
   };
   presentation?: {
     failCardCreate?: boolean;
@@ -177,6 +182,21 @@ export function createHarness(options?: {
     emojiType: string;
     messageId: string;
   }> = [];
+  const mediaOperations: Array<
+    | {
+        action: "send-image";
+        chatId: string;
+        fileName: string;
+        runId: string;
+      }
+    | {
+        action: "send-file";
+        chatId: string;
+        fileName: string;
+        runId: string;
+      }
+  > = [];
+  const uploadedMediaNames = new Map<string, string>();
   const sentMessages: OutboundMessage[] = [];
   const bridgeRequests: RunRequest[] = [];
   const memoryBenchmarkTrace = {
@@ -339,6 +359,114 @@ export function createHarness(options?: {
           messageId,
         });
       },
+      uploadImage: async (input: {
+        chatId: string;
+        runId: string;
+        fileName: string;
+        content: Uint8Array;
+      }) => {
+        if (options?.delivery?.failUploadImage) {
+          throw new FeishuMediaStageError("upload", "upload image failed");
+        }
+        const targetRef = `img-${Math.random().toString(36).slice(2, 10)}`;
+        uploadedMediaNames.set(targetRef, input.fileName);
+        return { targetRef };
+      },
+      deliverImage: async (input: {
+        chatId: string;
+        runId: string;
+        targetRef: string;
+      }) => {
+        if (options?.delivery?.failSendImage) {
+          throw new FeishuMediaStageError("delivery", "send image failed");
+        }
+        mediaOperations.push({
+          action: "send-image",
+          chatId: input.chatId,
+          fileName: uploadedMediaNames.get(input.targetRef) ?? input.targetRef,
+          runId: input.runId,
+        });
+        return {
+          messageId: `image-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      },
+      sendImage: async (input: {
+        chatId: string;
+        runId: string;
+        fileName: string;
+        content: Uint8Array;
+      }) => {
+        if (options?.delivery?.failUploadImage) {
+          throw new FeishuMediaStageError("upload", "upload image failed");
+        }
+        if (options?.delivery?.failSendImage) {
+          throw new FeishuMediaStageError("delivery", "send image failed");
+        }
+        mediaOperations.push({
+          action: "send-image",
+          chatId: input.chatId,
+          fileName: input.fileName,
+          runId: input.runId,
+        });
+        return {
+          messageId: `image-${Math.random().toString(36).slice(2, 10)}`,
+          targetRef: `img-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      },
+      uploadFile: async (input: {
+        chatId: string;
+        runId: string;
+        fileName: string;
+        content: Uint8Array;
+      }) => {
+        if (options?.delivery?.failUploadFile) {
+          throw new FeishuMediaStageError("upload", "upload file failed");
+        }
+        const targetRef = `file-${Math.random().toString(36).slice(2, 10)}`;
+        uploadedMediaNames.set(targetRef, input.fileName);
+        return { targetRef };
+      },
+      deliverFile: async (input: {
+        chatId: string;
+        runId: string;
+        targetRef: string;
+      }) => {
+        if (options?.delivery?.failSendFile) {
+          throw new FeishuMediaStageError("delivery", "send file failed");
+        }
+        mediaOperations.push({
+          action: "send-file",
+          chatId: input.chatId,
+          fileName: uploadedMediaNames.get(input.targetRef) ?? input.targetRef,
+          runId: input.runId,
+        });
+        return {
+          messageId: `file-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      },
+      sendFile: async (input: {
+        chatId: string;
+        runId: string;
+        fileName: string;
+        content: Uint8Array;
+      }) => {
+        if (options?.delivery?.failUploadFile) {
+          throw new FeishuMediaStageError("upload", "upload file failed");
+        }
+        if (options?.delivery?.failSendFile) {
+          throw new FeishuMediaStageError("delivery", "send file failed");
+        }
+        mediaOperations.push({
+          action: "send-file",
+          chatId: input.chatId,
+          fileName: input.fileName,
+          runId: input.runId,
+        });
+        return {
+          messageId: `file-${Math.random().toString(36).slice(2, 10)}`,
+          targetRef: `file-${Math.random().toString(36).slice(2, 10)}`,
+        };
+      },
       completeCard: presentationSender.completeCard,
       createCard: presentationSender.createCard,
       sendFallbackTerminal: presentationSender.sendFallbackTerminal,
@@ -458,6 +586,7 @@ export function createHarness(options?: {
             "content-type": "application/json",
           },
           body: JSON.stringify({
+            runId: run.id,
             toolName,
             invocation: args,
             workspace: run.workspace,
@@ -589,6 +718,13 @@ export function createHarness(options?: {
     });
   }
 
+  async function getInternalRunMedia(path = "/internal/run-media", query?: Record<string, string>) {
+    const search = query ? `?${new URLSearchParams(query).toString()}` : "";
+    return gateway.request(`http://localhost${path}${search}`, {
+      method: "GET",
+    });
+  }
+
   async function listRunStatuses(): Promise<RunStatus[]> {
     const runs = await repositories.runs.listRuns();
     return runs.map((run) => run.status);
@@ -639,9 +775,11 @@ export function createHarness(options?: {
     gateway,
     getInternalTriggers,
     getInternalManagedSchedules,
+    getInternalRunMedia,
     heartbeats,
     logger,
     memoryBenchmarkTrace,
+    mediaOperations,
     notifier,
     postFeishuText,
     postExternalWebhook,

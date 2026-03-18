@@ -12,6 +12,9 @@ import type {
   EffectiveManagedSchedule,
   OutboundDelivery,
   PresentationPhase,
+  RunMediaDelivery,
+  RunMediaDeliveryStatus,
+  RunMediaFailureStage,
   Run,
   RunEvent,
   RunPresentation,
@@ -274,6 +277,34 @@ export interface PresentationRepository {
   }): Promise<RunPresentation>;
 }
 
+export interface RunMediaDeliveryRepository {
+  createMediaDelivery(input: {
+    runId: string;
+    sessionId: string | null;
+    chatId: string;
+    sourceType: RunMediaDelivery["sourceType"];
+    sourceRef: string;
+    mediaKind: RunMediaDelivery["mediaKind"];
+    resolvedFileName?: string | null;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    now?: Date;
+  }): Promise<RunMediaDelivery>;
+  updateMediaDelivery(input: {
+    mediaDeliveryId: string;
+    status: RunMediaDeliveryStatus;
+    failureStage?: RunMediaFailureStage;
+    failureReason?: string | null;
+    outboundDeliveryId?: string | null;
+    targetRef?: string | null;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    resolvedFileName?: string | null;
+    now?: Date;
+  }): Promise<RunMediaDelivery>;
+  listMediaDeliveries(): Promise<RunMediaDelivery[]>;
+}
+
 export interface TriggerDefinitionRepository {
   getDefinitionById(definitionId: string): Promise<TriggerDefinition | null>;
   getEffectiveDefinitionById(definitionId: string): Promise<EffectiveManagedSchedule | null>;
@@ -352,6 +383,7 @@ export interface RepositoryBundle {
   runs: RunRepository;
   events: RunEventRepository;
   deliveries: DeliveryRepository;
+  runMediaDeliveries: RunMediaDeliveryRepository;
   presentations: PresentationRepository;
 }
 
@@ -375,6 +407,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
   const runIdsBySession = new Map<string, string[]>();
   const events = new Map<string, Array<RunEvent<Record<string, unknown>>>>();
   const deliveries = new Map<string, OutboundDelivery>();
+  const runMediaDeliveries = new Map<string, RunMediaDelivery>();
   const presentations = new Map<string, RunPresentation>();
 
   const sessionRepository: SessionRepository = {
@@ -1056,6 +1089,55 @@ export function createInMemoryRepositories(): RepositoryBundle {
     },
   };
 
+  const runMediaDeliveryRepository: RunMediaDeliveryRepository = {
+    async createMediaDelivery(input) {
+      const delivery: RunMediaDelivery = {
+        id: randomUUID(),
+        runId: input.runId,
+        sessionId: input.sessionId,
+        chatId: input.chatId,
+        sourceType: input.sourceType,
+        sourceRef: input.sourceRef,
+        mediaKind: input.mediaKind,
+        resolvedFileName: input.resolvedFileName ?? null,
+        mimeType: input.mimeType ?? null,
+        sizeBytes: input.sizeBytes ?? null,
+        status: "requested",
+        failureStage: null,
+        failureReason: null,
+        outboundDeliveryId: null,
+        targetRef: null,
+        createdAt: nowIso(input.now),
+        updatedAt: nowIso(input.now),
+      };
+      runMediaDeliveries.set(delivery.id, delivery);
+      return clone(delivery);
+    },
+    async updateMediaDelivery(input) {
+      const delivery = runMediaDeliveries.get(input.mediaDeliveryId);
+      if (!delivery) {
+        throw new Error(`media delivery not found: ${input.mediaDeliveryId}`);
+      }
+      const updated: RunMediaDelivery = {
+        ...delivery,
+        status: input.status,
+        failureStage: input.failureStage === undefined ? delivery.failureStage : input.failureStage,
+        failureReason: input.failureReason === undefined ? delivery.failureReason : input.failureReason,
+        outboundDeliveryId: input.outboundDeliveryId === undefined ? delivery.outboundDeliveryId : input.outboundDeliveryId,
+        targetRef: input.targetRef === undefined ? delivery.targetRef : input.targetRef,
+        mimeType: input.mimeType === undefined ? delivery.mimeType : input.mimeType,
+        sizeBytes: input.sizeBytes === undefined ? delivery.sizeBytes : input.sizeBytes,
+        resolvedFileName: input.resolvedFileName === undefined ? delivery.resolvedFileName : input.resolvedFileName,
+        updatedAt: nowIso(input.now),
+      };
+      runMediaDeliveries.set(updated.id, updated);
+      return clone(updated);
+    },
+    async listMediaDeliveries() {
+      return Array.from(runMediaDeliveries.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(clone);
+    },
+  };
+
   function updateDelivery(
     deliveryId: string,
     status: DeliveryStatus,
@@ -1119,6 +1201,7 @@ export function createInMemoryRepositories(): RepositoryBundle {
     runs: runRepository,
     events: eventRepository,
     deliveries: deliveryRepository,
+    runMediaDeliveries: runMediaDeliveryRepository,
     presentations: presentationRepository,
   };
 }
@@ -1148,6 +1231,8 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     'SELECT run_id AS "runId", session_id AS "sessionId", chat_id AS "chatId", phase, terminal_status AS "terminalStatus", streaming_message_id AS "streamingMessageId", streaming_card_id AS "streamingCardId", streaming_element_id AS "streamingElementId", COALESCE(fallback_terminal_message_id, final_post_message_id) AS "fallbackTerminalMessageId", degraded_reason AS "degradedReason", last_output_sequence AS "lastOutputSequence", last_output_excerpt AS "lastOutputExcerpt", created_at AS "createdAt", updated_at AS "updatedAt" FROM run_presentations';
   const selectOutboundDeliverySql =
     'SELECT id, run_id AS "runId", trigger_execution_id AS "triggerExecutionId", chat_id AS "chatId", delivery_kind AS "deliveryKind", content, target_ref AS "targetRef", status, attempt_count AS "attemptCount", last_error AS "lastError", created_at AS "createdAt", updated_at AS "updatedAt" FROM outbound_deliveries';
+  const selectRunMediaDeliverySql =
+    'SELECT id, run_id AS "runId", session_id AS "sessionId", chat_id AS "chatId", source_type AS "sourceType", source_ref AS "sourceRef", media_kind AS "mediaKind", resolved_file_name AS "resolvedFileName", mime_type AS "mimeType", size_bytes AS "sizeBytes", status, failure_stage AS "failureStage", failure_reason AS "failureReason", outbound_delivery_id AS "outboundDeliveryId", target_ref AS "targetRef", created_at AS "createdAt", updated_at AS "updatedAt" FROM run_media_deliveries';
 
   const sessions: SessionRepository = {
     async getSessionById(sessionId) {
@@ -2079,6 +2164,76 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     },
   };
 
+  const runMediaDeliveries: RunMediaDeliveryRepository = {
+    async createMediaDelivery(input) {
+      const delivery: RunMediaDelivery = {
+        id: randomUUID(),
+        runId: input.runId,
+        sessionId: input.sessionId,
+        chatId: input.chatId,
+        sourceType: input.sourceType,
+        sourceRef: input.sourceRef,
+        mediaKind: input.mediaKind,
+        resolvedFileName: input.resolvedFileName ?? null,
+        mimeType: input.mimeType ?? null,
+        sizeBytes: input.sizeBytes ?? null,
+        status: "requested",
+        failureStage: null,
+        failureReason: null,
+        outboundDeliveryId: null,
+        targetRef: null,
+        createdAt: nowIso(input.now),
+        updatedAt: nowIso(input.now),
+      };
+      await client.query(
+        "INSERT INTO run_media_deliveries (id, run_id, session_id, chat_id, source_type, source_ref, media_kind, resolved_file_name, mime_type, size_bytes, status, failure_stage, failure_reason, outbound_delivery_id, target_ref, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+        [
+          delivery.id,
+          delivery.runId,
+          delivery.sessionId,
+          delivery.chatId,
+          delivery.sourceType,
+          delivery.sourceRef,
+          delivery.mediaKind,
+          delivery.resolvedFileName,
+          delivery.mimeType,
+          delivery.sizeBytes,
+          delivery.status,
+          delivery.failureStage,
+          delivery.failureReason,
+          delivery.outboundDeliveryId,
+          delivery.targetRef,
+          delivery.createdAt,
+          delivery.updatedAt,
+        ],
+      );
+      return delivery;
+    },
+    async updateMediaDelivery(input) {
+      await client.query(
+        "UPDATE run_media_deliveries SET status = $1, failure_stage = COALESCE($2, failure_stage), failure_reason = COALESCE($3, failure_reason), outbound_delivery_id = COALESCE($4, outbound_delivery_id), target_ref = COALESCE($5, target_ref), mime_type = COALESCE($6, mime_type), size_bytes = COALESCE($7, size_bytes), resolved_file_name = COALESCE($8, resolved_file_name), updated_at = $9 WHERE id = $10",
+        [
+          input.status,
+          input.failureStage ?? null,
+          input.failureReason ?? null,
+          input.outboundDeliveryId ?? null,
+          input.targetRef ?? null,
+          input.mimeType ?? null,
+          input.sizeBytes ?? null,
+          input.resolvedFileName ?? null,
+          nowIso(input.now),
+          input.mediaDeliveryId,
+        ],
+      );
+      const result = await client.query<RunMediaDelivery>(`${selectRunMediaDeliverySql} WHERE id = $1 LIMIT 1`, [input.mediaDeliveryId]);
+      return result.rows[0];
+    },
+    async listMediaDeliveries() {
+      const result = await client.query<RunMediaDelivery>(`${selectRunMediaDeliverySql} ORDER BY created_at ASC`);
+      return result.rows;
+    },
+  };
+
   const presentations: PresentationRepository = {
     async createPendingPresentation({ runId, sessionId, chatId, now }) {
       const existing = await this.getPresentationByRunId(runId);
@@ -2181,6 +2336,7 @@ export function createPostgresRepositories(client: PostgresClient): RepositoryBu
     runs,
     events,
     deliveries,
+    runMediaDeliveries,
     presentations,
   };
 }

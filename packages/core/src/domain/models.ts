@@ -21,6 +21,11 @@ export type ConversationSessionRecoveryResult = "recovered" | "failed";
 export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
 export type ScheduleManagementActionType = "create" | "list" | "update" | "disable" | "config_sync";
 export type ScheduleManagementResolutionStatus = "executed" | "needs_clarification" | "rejected";
+export type MediaSourceType = "local_path" | "remote_url";
+export type MediaKind = "image" | "file" | "auto";
+export type MediaToolStatus = "sent" | "rejected" | "failed";
+export type RunMediaDeliveryStatus = "requested" | "source_failed" | "uploading" | "upload_failed" | "sending" | "sent" | "failed";
+export type RunMediaFailureStage = "context" | "source" | "upload" | "delivery" | null;
 export type WorkspaceBindingSource = "default" | "config" | "manual" | "created" | "unbound";
 export type WorkspaceProvisionSource = "default" | "config" | "template_created";
 export type ConversationSessionMemoryState =
@@ -41,7 +46,9 @@ export type DeliveryKind =
   | "card_create"
   | "card_update"
   | "card_complete"
-  | "fallback_terminal";
+  | "fallback_terminal"
+  | "media_image"
+  | "media_file";
 export type CommandName = "status" | "abort" | "new" | "bind" | "mode" | "help" | null;
 export type RunEventType =
   | "run.queued"
@@ -177,6 +184,44 @@ export interface ScheduleToolResult {
   question?: string | null;
   targetDefinitionId: string | null;
   summary: string;
+}
+
+export interface MediaToolInvocation {
+  actionType: "send";
+  sourceType: MediaSourceType;
+  path?: string;
+  url?: string;
+  mediaKind?: MediaKind;
+  title?: string | null;
+  caption?: string | null;
+}
+
+export interface MediaToolResult {
+  status: MediaToolStatus;
+  reason: string | null;
+  mediaDeliveryId: string | null;
+  targetRef: string | null;
+  summary: string;
+}
+
+export interface RunMediaDelivery {
+  id: string;
+  runId: string;
+  sessionId: string | null;
+  chatId: string;
+  sourceType: MediaSourceType;
+  sourceRef: string;
+  mediaKind: Exclude<MediaKind, "auto">;
+  resolvedFileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  status: RunMediaDeliveryStatus;
+  failureStage: RunMediaFailureStage;
+  failureReason: string | null;
+  outboundDeliveryId: string | null;
+  targetRef: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TriggerExecution {

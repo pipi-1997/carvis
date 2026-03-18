@@ -1,23 +1,50 @@
-import type { ScheduleToolInvocation } from "@carvis/core";
+import type { MediaToolInvocation, ScheduleToolInvocation } from "@carvis/core";
 
+import type { createMediaDeliveryService } from "./media-delivery-service.ts";
 import type { createScheduleManagementService } from "./schedule-management-service.ts";
 import { parseOriginalScheduleUserPrompt } from "./schedule-management-prompt.ts";
 
 export function createRunToolRouter(input: {
+  mediaDeliveryService?: ReturnType<typeof createMediaDeliveryService>;
   scheduleManagementService: ReturnType<typeof createScheduleManagementService>;
   agentId: string;
 }) {
   return {
     async execute(inputTool: {
+      runId?: string;
       toolName: string;
-      invocation: ScheduleToolInvocation;
+      invocation: ScheduleToolInvocation | MediaToolInvocation;
       workspace: string;
       sessionId: string;
       chatId: string;
       userId: string | null;
       requestedText: string;
     }) {
-      const invocationWorkspace = inputTool.invocation.workspace?.trim() || inputTool.workspace;
+      if (inputTool.toolName === "media.send") {
+        if (!input.mediaDeliveryService) {
+          return {
+            status: "failed" as const,
+            reason: "tool_unavailable",
+            mediaDeliveryId: null,
+            targetRef: null,
+            summary: "media delivery service unavailable",
+          };
+        }
+        return input.mediaDeliveryService.send({
+          runId: inputTool.runId ?? "",
+          invocation: inputTool.invocation as MediaToolInvocation,
+          sessionId: inputTool.sessionId,
+          chatId: inputTool.chatId,
+          workspace: inputTool.workspace,
+        });
+      }
+
+      const scheduleInvocation = inputTool.invocation as ScheduleToolInvocation;
+      const invocationWorkspace = scheduleInvocation.workspace?.trim() || inputTool.workspace;
+      const normalizedInvocation: ScheduleToolInvocation = {
+        ...scheduleInvocation,
+        workspace: invocationWorkspace,
+      };
       if (invocationWorkspace !== inputTool.workspace) {
         return {
           status: "rejected" as const,
@@ -26,10 +53,6 @@ export function createRunToolRouter(input: {
           summary: "不能跨 workspace 管理定时任务。",
         };
       }
-      const normalizedInvocation = {
-        ...inputTool.invocation,
-        workspace: invocationWorkspace,
-      };
       const requestedText = parseOriginalScheduleUserPrompt(inputTool.requestedText) ?? inputTool.requestedText;
       const normalizedInput = {
         ...inputTool,

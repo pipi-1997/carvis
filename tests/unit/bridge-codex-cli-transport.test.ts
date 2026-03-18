@@ -360,12 +360,13 @@ printf '%s' '已创建日报' > "$out_file"
     });
   });
 
-  test("healthcheck 会同时探测 codex 与 carvis-schedule CLI 可执行性", async () => {
+  test("healthcheck 会同时探测 codex、carvis-schedule 与 carvis-media CLI 可执行性", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "carvis-codex-cli-health-"));
     cleanupCallbacks.push(() => rm(tempDir, { force: true, recursive: true }));
 
     const codexShim = join(tempDir, "codex-shim.sh");
     const scheduleShim = join(tempDir, "carvis-schedule");
+    const mediaShim = join(tempDir, "carvis-media");
     await writeFile(
       codexShim,
       `#!/bin/sh
@@ -388,11 +389,23 @@ exit 1
 `,
     );
     await chmod(scheduleShim, 0o755);
+    await writeFile(
+      mediaShim,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  printf '%s\n' 'carvis-media help'
+  exit 0
+fi
+exit 1
+`,
+    );
+    await chmod(mediaShim, 0o755);
 
     await expect(
       codexCliHealthcheck({
         codexCommand: codexShim,
         scheduleCommand: scheduleShim,
+        mediaCommand: mediaShim,
         workspace: tempDir,
       }),
     ).resolves.toEqual({
@@ -407,6 +420,7 @@ exit 1
 
     const codexShim = join(tempDir, "codex-shim.sh");
     const scheduleShim = join(tempDir, "carvis-schedule");
+    const mediaShim = join(tempDir, "carvis-media");
     await writeFile(
       codexShim,
       `#!/bin/sh
@@ -425,14 +439,71 @@ exit 1
 `,
     );
     await chmod(scheduleShim, 0o755);
+    await writeFile(
+      mediaShim,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  exit 0
+fi
+exit 1
+`,
+    );
+    await chmod(mediaShim, 0o755);
 
     await expect(
       codexCliHealthcheck({
         codexCommand: codexShim,
         scheduleCommand: scheduleShim,
+        mediaCommand: mediaShim,
         workspace: tempDir,
       }),
     ).rejects.toThrow("carvis-schedule unavailable");
+  });
+
+  test("healthcheck 在 carvis-media 不可执行时失败", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "carvis-codex-cli-health-"));
+    cleanupCallbacks.push(() => rm(tempDir, { force: true, recursive: true }));
+
+    const codexShim = join(tempDir, "codex-shim.sh");
+    const scheduleShim = join(tempDir, "carvis-schedule");
+    const mediaShim = join(tempDir, "carvis-media");
+    await writeFile(
+      codexShim,
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '%s\n' 'codex-cli test'
+  exit 0
+fi
+exit 0
+`,
+    );
+    await chmod(codexShim, 0o755);
+    await writeFile(
+      scheduleShim,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  exit 0
+fi
+exit 1
+`,
+    );
+    await chmod(scheduleShim, 0o755);
+    await writeFile(
+      mediaShim,
+      `#!/bin/sh
+exit 1
+`,
+    );
+    await chmod(mediaShim, 0o755);
+
+    await expect(
+      codexCliHealthcheck({
+        codexCommand: codexShim,
+        scheduleCommand: scheduleShim,
+        mediaCommand: mediaShim,
+        workspace: tempDir,
+      }),
+    ).rejects.toThrow("carvis-media unavailable");
   });
 
   test("healthcheck 在 codex 不可执行时失败", async () => {
@@ -466,6 +537,7 @@ exit 1
       codexCliHealthcheck({
         codexCommand: codexShim,
         scheduleCommand: scheduleShim,
+        mediaCommand: scheduleShim,
         workspace: tempDir,
       }),
     ).rejects.toThrow("codex");

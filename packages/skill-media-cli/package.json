@@ -1,0 +1,7 @@
+{
+  "name": "@carvis/skill-media-cli",
+  "version": "0.1.0",
+  "description": "Skill instructions for the carvis media delivery CLI.",
+  "private": true,
+  "type": "module"
+}

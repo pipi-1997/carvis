@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 
-import type { ScheduleToolInvocation } from "@carvis/core";
+import type { MediaToolInvocation, ScheduleToolInvocation } from "@carvis/core";
 
 import type { createRunToolRouter } from "../services/run-tool-router.ts";
 
@@ -10,8 +10,9 @@ export function registerInternalRunToolRoutes(input: {
 }) {
   input.app.post("/internal/run-tools/execute", async (context) => {
     const payload = await context.req.json() as {
+      runId?: string;
       toolName: string;
-      invocation: ScheduleToolInvocation;
+      invocation: ScheduleToolInvocation | MediaToolInvocation;
       workspace: string;
       sessionId: string;
       chatId: string;
