@@ -194,6 +194,7 @@ function buildCodexRuntimeEnv(input: {
             CARVIS_WORKSPACE: input.request.workspace,
           }),
           CARVIS_WORKSPACE: input.request.workspace,
+          CARVIS_RUN_ID: input.request.id,
           CARVIS_SESSION_ID: input.request.sessionId ?? "",
           CARVIS_CHAT_ID: input.request.chatId ?? "",
           CARVIS_USER_ID: input.request.triggerUserId ?? "",
@@ -229,6 +230,7 @@ export async function codexCliHealthcheck(
   input: string | {
     codexCommand?: string;
     scheduleCommand?: string;
+    mediaCommand?: string;
     timeoutMs?: number;
     workspace?: string;
   } = "codex",
@@ -236,6 +238,7 @@ export async function codexCliHealthcheck(
   const options = typeof input === "string" ? { codexCommand: input } : input;
   const codexCommand = options.codexCommand ?? "codex";
   const scheduleCommand = options.scheduleCommand ?? "carvis-schedule";
+  const mediaCommand = options.mediaCommand ?? "carvis-media";
   const timeoutMs = options.timeoutMs ?? 15_000;
   const env = buildCarvisSchedulePathEnv(process.env);
 
@@ -261,6 +264,16 @@ export async function codexCliHealthcheck(
     });
   } catch (error) {
     throw new Error(`carvis-schedule unavailable: ${readExecFailureMessage(error)}`);
+  }
+
+  try {
+    await execFileAsync(mediaCommand, ["--help"], {
+      cwd: spawnCwd,
+      env,
+      timeout: timeoutMs,
+    });
+  } catch (error) {
+    throw new Error(`carvis-media unavailable: ${readExecFailureMessage(error)}`);
   }
 
   return {
@@ -547,9 +560,10 @@ const NESTED_KEYS = new Set(["content", "delta", "item", "message", "messages", 
 
 function buildCarvisSchedulePathEnv(baseEnv: NodeJS.ProcessEnv) {
   const carvisScheduleBinDir = fileURLToPath(new URL("../../carvis-schedule-cli/bin/", import.meta.url));
+  const carvisMediaBinDir = fileURLToPath(new URL("../../carvis-media-cli/bin/", import.meta.url));
   return {
     ...baseEnv,
-    PATH: [carvisScheduleBinDir, baseEnv.PATH ?? ""].filter((value) => value.length > 0).join(":"),
+    PATH: [carvisScheduleBinDir, carvisMediaBinDir, baseEnv.PATH ?? ""].filter((value) => value.length > 0).join(":"),
   };
 }
 

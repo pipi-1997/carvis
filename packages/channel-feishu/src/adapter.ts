@@ -7,7 +7,10 @@ import type {
   FeishuCardCreateInput,
   FeishuCardCreateResult,
   FeishuCardUpdateInput,
+  FeishuMediaDeliverInput,
   FeishuFallbackTerminalInput,
+  FeishuMediaSendInput,
+  FeishuMediaUploadResult,
 } from "./runtime-sender.ts";
 
 interface FeishuWebhookPayload {
@@ -33,9 +36,15 @@ interface FeishuSender {
   addReaction(messageId: string, emojiType: string): Promise<void>;
   completeCard?(input: FeishuCardCompleteInput): Promise<void>;
   createCard?(input: FeishuCardCreateInput): Promise<FeishuCardCreateResult>;
+  deliverFile?(input: FeishuMediaDeliverInput): Promise<{ messageId: string }>;
+  deliverImage?(input: FeishuMediaDeliverInput): Promise<{ messageId: string }>;
   removeReaction(messageId: string, emojiType: string): Promise<void>;
+  sendFile?(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }>;
+  sendImage?(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }>;
   sendMessage(message: OutboundMessage): Promise<{ messageId: string }>;
   sendFallbackTerminal?(input: FeishuFallbackTerminalInput): Promise<{ messageId: string }>;
+  uploadFile?(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult>;
+  uploadImage?(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult>;
   updateCard?(input: FeishuCardUpdateInput): Promise<void>;
 }
 
@@ -118,6 +127,48 @@ export class FeishuAdapter {
 
   async removeReaction(messageId: string, emojiType: string): Promise<void> {
     await this.sender.removeReaction(messageId, emojiType);
+  }
+
+  async uploadFile(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult> {
+    if (!this.sender.uploadFile) {
+      throw new Error("feishu sender does not support uploadFile");
+    }
+    return this.sender.uploadFile(input);
+  }
+
+  async uploadImage(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult> {
+    if (!this.sender.uploadImage) {
+      throw new Error("feishu sender does not support uploadImage");
+    }
+    return this.sender.uploadImage(input);
+  }
+
+  async deliverFile(input: FeishuMediaDeliverInput): Promise<{ messageId: string }> {
+    if (!this.sender.deliverFile) {
+      throw new Error("feishu sender does not support deliverFile");
+    }
+    return this.sender.deliverFile(input);
+  }
+
+  async deliverImage(input: FeishuMediaDeliverInput): Promise<{ messageId: string }> {
+    if (!this.sender.deliverImage) {
+      throw new Error("feishu sender does not support deliverImage");
+    }
+    return this.sender.deliverImage(input);
+  }
+
+  async sendFile(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }> {
+    if (!this.sender.sendFile) {
+      throw new Error("feishu sender does not support sendFile");
+    }
+    return this.sender.sendFile(input);
+  }
+
+  async sendImage(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }> {
+    if (!this.sender.sendImage) {
+      throw new Error("feishu sender does not support sendImage");
+    }
+    return this.sender.sendImage(input);
   }
 
   async sendFallbackTerminal(input: FeishuFallbackTerminalInput): Promise<{ messageId: string }> {

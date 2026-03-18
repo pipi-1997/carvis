@@ -42,13 +42,48 @@ export interface FeishuFallbackTerminalInput {
   content: string;
 }
 
+export interface FeishuMediaSendInput {
+  chatId: string;
+  runId: string;
+  fileName: string;
+  content: Uint8Array;
+}
+
+export interface FeishuMediaUploadResult {
+  targetRef: string;
+}
+
+export interface FeishuMediaDeliverInput {
+  chatId: string;
+  runId: string;
+  targetRef: string;
+}
+
+export class FeishuMediaStageError extends Error {
+  readonly stage: "upload" | "delivery";
+  override readonly cause?: unknown;
+
+  constructor(stage: "upload" | "delivery", message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = "FeishuMediaStageError";
+    this.stage = stage;
+    this.cause = options?.cause;
+  }
+}
+
 export interface FeishuRuntimeSender {
   addReaction(messageId: string, emojiType: string): Promise<void>;
   completeCard(input: FeishuCardCompleteInput): Promise<void>;
   createCard(input: FeishuCardCreateInput): Promise<FeishuCardCreateResult>;
+  deliverFile(input: FeishuMediaDeliverInput): Promise<{ messageId: string }>;
+  deliverImage(input: FeishuMediaDeliverInput): Promise<{ messageId: string }>;
   removeReaction(messageId: string, emojiType: string): Promise<void>;
+  sendFile(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }>;
+  sendImage(input: FeishuMediaSendInput): Promise<{ messageId: string; targetRef: string }>;
   sendMessage(message: OutboundMessage): Promise<{ messageId: string }>;
   sendFallbackTerminal(input: FeishuFallbackTerminalInput): Promise<{ messageId: string }>;
+  uploadFile(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult>;
+  uploadImage(input: FeishuMediaSendInput): Promise<FeishuMediaUploadResult>;
   updateCard(input: FeishuCardUpdateInput): Promise<void>;
 }
 
@@ -294,6 +329,98 @@ export function createFeishuRuntimeSender(
         }
       });
     },
+    async uploadFile(input) {
+      return await withTenantAccessToken(async (token) => {
+        try {
+          return {
+            targetRef: await uploadFeishuAsset(fetchImpl, token, {
+              assetType: "file",
+              fieldName: "file",
+              fileName: input.fileName,
+              content: input.content,
+            }),
+          };
+        } catch (error) {
+          throw new FeishuMediaStageError("upload", toErrorMessage(error), { cause: error });
+        }
+      });
+    },
+    async deliverFile(input) {
+      return await withTenantAccessToken(async (token) => {
+        try {
+          const messageId = await sendFeishuMessage(fetchImpl, token, {
+            chatId: input.chatId,
+            msgType: "file",
+            payload: {
+              content: {
+                file_key: input.targetRef,
+              },
+            },
+          });
+          return { messageId };
+        } catch (error) {
+          throw new FeishuMediaStageError("delivery", toErrorMessage(error), { cause: error });
+        }
+      });
+    },
+    async sendFile(input) {
+      const uploaded = await this.uploadFile(input);
+      const delivered = await this.deliverFile({
+        chatId: input.chatId,
+        runId: input.runId,
+        targetRef: uploaded.targetRef,
+      });
+      return {
+        messageId: delivered.messageId,
+        targetRef: uploaded.targetRef,
+      };
+    },
+    async uploadImage(input) {
+      return await withTenantAccessToken(async (token) => {
+        try {
+          return {
+            targetRef: await uploadFeishuAsset(fetchImpl, token, {
+              assetType: "image",
+              fieldName: "image",
+              fileName: input.fileName,
+              content: input.content,
+            }),
+          };
+        } catch (error) {
+          throw new FeishuMediaStageError("upload", toErrorMessage(error), { cause: error });
+        }
+      });
+    },
+    async deliverImage(input) {
+      return await withTenantAccessToken(async (token) => {
+        try {
+          const messageId = await sendFeishuMessage(fetchImpl, token, {
+            chatId: input.chatId,
+            msgType: "image",
+            payload: {
+              content: {
+                image_key: input.targetRef,
+              },
+            },
+          });
+          return { messageId };
+        } catch (error) {
+          throw new FeishuMediaStageError("delivery", toErrorMessage(error), { cause: error });
+        }
+      });
+    },
+    async sendImage(input) {
+      const uploaded = await this.uploadImage(input);
+      const delivered = await this.deliverImage({
+        chatId: input.chatId,
+        runId: input.runId,
+        targetRef: uploaded.targetRef,
+      });
+      return {
+        messageId: delivered.messageId,
+        targetRef: uploaded.targetRef,
+      };
+    },
     async sendMessage(message) {
       const messageId = await withTenantAccessToken((token) =>
         sendFeishuMessage(fetchImpl, token, {
@@ -449,7 +576,7 @@ async function sendFeishuMessage(
   token: string,
   input: {
     chatId: string;
-    msgType: "text" | "interactive" | "post";
+    msgType: "text" | "interactive" | "post" | "image" | "file";
     payload: Record<string, unknown>;
   },
 ): Promise<string> {
@@ -477,6 +604,48 @@ async function sendFeishuMessage(
   }
 
   return messageId;
+}
+
+async function uploadFeishuAsset(
+  fetchImpl: FetchLike,
+  token: string,
+  input: {
+    assetType: "image" | "file";
+    fieldName: "image" | "file";
+    fileName: string;
+    content: Uint8Array;
+  },
+) {
+  const form = new FormData();
+  form.append("image_type", input.assetType === "image" ? "message" : "message");
+  form.append(input.fieldName, new Blob([input.content.buffer as ArrayBuffer]), input.fileName);
+
+  const response = await fetchImpl(`${FEISHU_API_BASE_URL}/im/v1/${input.assetType === "image" ? "images" : "files"}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: form,
+  });
+
+  const parsed = (await response.json()) as {
+    data?: {
+      image_key?: string;
+      file_key?: string;
+    };
+    msg?: string;
+  };
+
+  const targetRef = input.assetType === "image" ? parsed.data?.image_key : parsed.data?.file_key;
+  if (!response.ok || !targetRef) {
+    throw new Error(parsed.msg ?? `feishu upload ${input.assetType} failed`);
+  }
+
+  return targetRef;
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildInteractiveCard(input: {

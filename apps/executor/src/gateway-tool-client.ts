@@ -44,6 +44,7 @@ export function createGatewayToolClient(input: {
             "content-type": "application/json",
           },
           body: JSON.stringify({
+            runId: args.run.id,
             toolName: args.toolName,
             invocation: args.arguments as unknown as ScheduleToolInvocation,
             workspace: args.run.workspace,

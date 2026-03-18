@@ -1,0 +1,34 @@
+{
+  "name": "@carvis/carvis-media-cli",
+  "version": "0.1.0",
+  "description": "Media delivery CLI surface for the carvis runtime.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/carvis-dev/carvis.git"
+  },
+  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "keywords": [
+    "carvis",
+    "media",
+    "cli"
+  ],
+  "private": false,
+  "type": "module",
+  "bin": {
+    "carvis-media": "./bin/carvis-media"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@carvis/core": "0.1.2"
+  }
+}

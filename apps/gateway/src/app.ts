@@ -5,9 +5,12 @@ import { Hono } from "hono";
 import { registerExternalWebhookRoute } from "./routes/external-webhook.ts";
 import { createFeishuWebhookHandler } from "./routes/feishu-webhook.ts";
 import { registerInternalManagedSchedulesRoutes } from "./routes/internal-managed-schedules.ts";
+import { registerInternalRunMediaRoutes } from "./routes/internal-run-media.ts";
 import { registerInternalRunToolRoutes } from "./routes/internal-run-tools.ts";
 import { registerInternalTriggersRoutes } from "./routes/internal-triggers.ts";
 import { createManagedSchedulePresenter } from "./services/managed-schedule-presenter.ts";
+import { createMediaDeliveryService } from "./services/media-delivery-service.ts";
+import { createRunMediaPresenter } from "./services/run-media-presenter.ts";
 import { createRunToolRouter } from "./services/run-tool-router.ts";
 import { createScheduleManagementService } from "./services/schedule-management-service.ts";
 import { createTriggerDefinitionSync } from "./services/trigger-definition-sync.ts";
@@ -27,6 +30,7 @@ type GatewayAppInput = Parameters<typeof createFeishuWebhookHandler>[0] & {
   triggerDispatcher?: ReturnType<typeof createTriggerDispatcher>;
   triggerStatusPresenter?: ReturnType<typeof createTriggerStatusPresenter>;
   managedSchedulePresenter?: ReturnType<typeof createManagedSchedulePresenter>;
+  runMediaPresenter?: ReturnType<typeof createRunMediaPresenter>;
   runToolRouter?: ReturnType<typeof createRunToolRouter>;
 };
 
@@ -59,10 +63,18 @@ export function createGatewayApp(input: GatewayAppInput) {
     repositories: input.repositories,
     now: input.now,
   });
+  const mediaDeliveryService = createMediaDeliveryService({
+    adapter: input.adapter,
+    repositories: input.repositories,
+  });
   const managedSchedulePresenter = input.managedSchedulePresenter ?? createManagedSchedulePresenter({
     repositories: input.repositories,
   });
+  const runMediaPresenter = input.runMediaPresenter ?? createRunMediaPresenter({
+    repositories: input.repositories,
+  });
   const runToolRouter = input.runToolRouter ?? createRunToolRouter({
+    mediaDeliveryService,
     scheduleManagementService,
     agentId: input.agentConfig.id,
   });
@@ -93,6 +105,10 @@ export function createGatewayApp(input: GatewayAppInput) {
   registerInternalManagedSchedulesRoutes({
     app,
     presenter: managedSchedulePresenter,
+  });
+  registerInternalRunMediaRoutes({
+    app,
+    presenter: runMediaPresenter,
   });
   registerInternalRunToolRoutes({
     app,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createFeishuRuntimeSender } from "@carvis/channel-feishu";
+import { createFeishuRuntimeSender, FeishuMediaStageError } from "@carvis/channel-feishu";
 import { createRuntimeLogger, type OutboundMessage } from "@carvis/core";
 
 describe("feishu runtime sender", () => {
@@ -210,6 +210,226 @@ describe("feishu runtime sender", () => {
     expect(requests[2]?.method).toBe("GET");
     expect(requests[3]?.url).toContain("/im/v1/messages/om_test_message/reactions/reaction-001");
     expect(requests[3]?.method).toBe("DELETE");
+  });
+
+  test("上传图片并发送 image 消息", async () => {
+    const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+          contentType: init?.headers instanceof Headers
+            ? init.headers.get("Content-Type")
+            : null,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 2) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                image_key: "img-key-001",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              message_id: "om_img_1",
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await sender.sendImage({
+      chatId: "oc_test_chat",
+      runId: "run-image",
+      fileName: "result.png",
+      content: new Uint8Array([1, 2, 3]),
+    });
+
+    expect(result).toEqual({
+      messageId: "om_img_1",
+      targetRef: "img-key-001",
+    });
+    expect(requests).toHaveLength(3);
+    expect(requests[1]?.url).toContain("/open-apis/im/v1/images");
+    expect(requests[2]?.url).toContain("/message/v4/send");
+    expect(JSON.parse(requests[2]?.body ?? "{}")).toEqual({
+      chat_id: "oc_test_chat",
+      msg_type: "image",
+      content: {
+        image_key: "img-key-001",
+      },
+    });
+  });
+
+  test("上传文件并发送 file 消息", async () => {
+    const requests: Array<{ url: string; method: string; body?: string; contentType?: string | null }> = [];
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          body: typeof init?.body === "string" ? init.body : undefined,
+          contentType: init?.headers instanceof Headers
+            ? init.headers.get("Content-Type")
+            : null,
+        });
+
+        if (requests.length === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (requests.length === 2) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                file_key: "file-key-001",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              message_id: "om_file_1",
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await sender.sendFile({
+      chatId: "oc_test_chat",
+      runId: "run-file",
+      fileName: "report.pdf",
+      content: new Uint8Array([1, 2, 3]),
+    });
+
+    expect(result).toEqual({
+      messageId: "om_file_1",
+      targetRef: "file-key-001",
+    });
+    expect(requests).toHaveLength(3);
+    expect(requests[1]?.url).toContain("/open-apis/im/v1/files");
+    expect(requests[2]?.url).toContain("/message/v4/send");
+    expect(JSON.parse(requests[2]?.body ?? "{}")).toEqual({
+      chat_id: "oc_test_chat",
+      msg_type: "file",
+      content: {
+        file_key: "file-key-001",
+      },
+    });
+  });
+
+  test("上传阶段失败时抛出 upload stage 错误", async () => {
+    let requestCount = 0;
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (_input, _init) => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            msg: "upload broken",
+          }),
+          { status: 500 },
+        );
+      },
+    });
+
+    try {
+      await sender.uploadImage({
+        chatId: "oc_test_chat",
+        runId: "run-upload-failed",
+        fileName: "result.png",
+        content: new Uint8Array([1, 2, 3]),
+      });
+      throw new Error("expected upload to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FeishuMediaStageError);
+      expect(error).toMatchObject({
+        stage: "upload",
+        message: "upload broken",
+      });
+    }
+  });
+
+  test("最终发送阶段失败时抛出 delivery stage 错误", async () => {
+    let requestCount = 0;
+    const sender = createFeishuRuntimeSender({
+      appId: "cli_test_app",
+      appSecret: "test_app_secret",
+      fetch: async (_input, _init) => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response(
+            JSON.stringify({
+              tenant_access_token: "tenant-token",
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            msg: "send broken",
+          }),
+          { status: 500 },
+        );
+      },
+    });
+
+    try {
+      await sender.deliverFile({
+        chatId: "oc_test_chat",
+        runId: "run-delivery-failed",
+        targetRef: "file-key-001",
+      });
+      throw new Error("expected delivery to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FeishuMediaStageError);
+      expect(error).toMatchObject({
+        stage: "delivery",
+        message: "send broken",
+      });
+    }
   });
 
   test("发送运行中 interactive 卡片、更新输出区域并切换为终态摘要卡", async () => {
