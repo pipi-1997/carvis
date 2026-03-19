@@ -66,12 +66,16 @@ tests/
 
 <!-- MANUAL ADDITIONS START -->
 - 当前仓库的公开发版主路径是 `changeset -> release PR -> merge release PR -> npm publish + tag + GitHub release`。
+- `gh` 仅用于查看 release PR、workflow run、GitHub release 和必要时触发 rerun；不要用 `gh pr create` 手工伪造 release PR。release PR 必须由 `changesets/action` 在 `main` 上基于 eligible changeset 自动创建或更新。
+- 不要在普通功能分支或 `main` 上手工执行 `release:version` 来“提前消费” changeset，然后再期待 GitHub 自动创建 release PR；changeset 一旦被消费并连同版本文件一起合入 `main`，release workflow 将检测不到 eligible changeset，因此不会再自动创建 release PR。
+- `release:version` 只应用于 release PR 分支或在 release workflow 中由 `changesets/action` 调用；本地手工运行它之前，必须先确认当前动作就是在推进 release PR，而不是普通功能合并。
 - 当前公开 npm 发布默认通过 trusted publishing 完成；不要为 CI 持久保存或重新引入 `NPM_TOKEN`。
 - 只有命中公开 release group 的 changeset 才会推动公开 release PR；docs-only、internal-only 或 ineligible package 改动不应推动公开发版。
 - `@carvis/carvis-media-cli` 当前是内部 transport CLI，不参与 npm 公开发布，也不属于公开 release group。
 - agent、开发者和 operator 都必须遵守 release PR 规则；若仓库中存在多个 AI 工具入口或镜像指导文件，这些规则必须同步写入所有现有入口。
 - 本地可选使用 `gh` 查看 release PR、workflow run 和 GitHub release，但 `gh` 只是辅助工具，不是 CI 主流程依赖。
 - 发布失败时优先使用 workflow rerun；若仍失败，再按 release runbook 走手工 fallback，依赖 `skipped_existing_version` 语义保持幂等。
+- 若某次误操作已经把 `release:version` 结果直接合入 `main`，导致仓库中不再存在 eligible changeset，则本轮不要再手工补一条“伪 release PR”。应直接按 runbook 走手工 fallback publish，或先回滚该版本推进提交、恢复 changeset，再重新让 workflow 自动创建 release PR。
 - 当前实现已落地本地单机双进程 runtime wiring：`gateway` 暴露 `/healthz` 并接入 Feishu `websocket`，`executor` 接入真实启动期 readiness 与消费循环。
 - `packages/channel-feishu` 现在同时包含 webhook 归一化、runtime sender、websocket ingress、allowlist / mention 过滤。
 - `packages/bridge-codex` 现在同时包含测试用脚本化 transport 和默认的 `codex exec` CLI transport。
