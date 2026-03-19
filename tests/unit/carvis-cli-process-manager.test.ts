@@ -22,12 +22,14 @@ describe("carvis cli process manager", () => {
         allowFrom: ["*"],
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath,
       },
       {
+        existingRuntimeEnv: {
+          POSTGRES_URL: "postgres://carvis",
+          REDIS_URL: "redis://carvis",
+        },
         fileSet,
       },
     );
@@ -113,12 +115,14 @@ describe("carvis cli process manager", () => {
         allowFrom: ["*"],
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath,
       },
       {
+        existingRuntimeEnv: {
+          POSTGRES_URL: "postgres://carvis",
+          REDIS_URL: "redis://carvis",
+        },
         fileSet,
       },
     );

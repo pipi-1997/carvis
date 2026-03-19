@@ -139,7 +139,7 @@ function formatNoteLine(line: string, hyperlinkSupported: boolean) {
 
 function highlightKeywords(line: string) {
   return line
-    .replace(/\b(FEISHU_APP_ID|FEISHU_APP_SECRET|POSTGRES_URL|REDIS_URL)\b/g, `${ansi.bold}${ansi.yellow}$1${ansi.reset}`)
+    .replace(/\b(FEISHU_APP_ID|FEISHU_APP_SECRET)\b/g, `${ansi.bold}${ansi.yellow}$1${ansi.reset}`)
     .replace(/\b(App ID|App Secret|chat_id|allowFrom|requireMention)\b/g, `${ansi.bold}$1${ansi.reset}`);
 }
 

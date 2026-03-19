@@ -19,8 +19,6 @@ describe("carvis configure cli", () => {
         allowFrom: ["chat-a"],
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath: harness.workspacePath,
       },

@@ -1,0 +1,22 @@
+{
+  "name": "@carvis/daemon",
+  "version": "0.1.1",
+  "description": "Managed local supervisor for the carvis runtime.",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "carvis-daemon": "./bin/carvis-daemon.cjs"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "dependencies": {
+    "@carvis/carvis-cli": "0.1.5",
+    "@carvis/core": "0.1.5"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts"
+  }
+}

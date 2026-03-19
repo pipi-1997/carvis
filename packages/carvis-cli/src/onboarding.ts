@@ -176,16 +176,6 @@ export async function runOnboarding(options: {
       id: "requireMention",
       message: "群聊中是否必须 @ 机器人？",
     });
-    const postgresUrl = await prompter.input({
-      defaultValue: existingDraft?.postgresUrl,
-      id: "postgresUrl",
-      message: "请输入 POSTGRES_URL",
-    });
-    const redisUrl = await prompter.input({
-      defaultValue: existingDraft?.redisUrl,
-      id: "redisUrl",
-      message: "请输入 REDIS_URL",
-    });
     const workspacePath = await prompter.input({
       defaultValue: existingDraft?.workspacePath ?? options.cwd ?? process.cwd(),
       id: "workspacePath",
@@ -256,8 +246,6 @@ export async function runOnboarding(options: {
         feishuAppId: validated.value.appId,
         feishuAppSecret: validated.value.appSecret,
         managedWorkspaceRoot: effectiveManagedWorkspaceRoot,
-        postgresUrl,
-        redisUrl,
         requireMention: validated.value.requireMention,
         templatePath,
         workspaceKey,

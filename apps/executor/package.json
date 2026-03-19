@@ -1,6 +1,6 @@
 {
   "name": "@carvis/executor",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "Execution worker process for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -26,9 +26,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@carvis/bridge-codex": "0.1.0",
-    "@carvis/channel-feishu": "0.1.1",
-    "@carvis/core": "0.1.1"
+    "@carvis/bridge-codex": "0.1.5",
+    "@carvis/channel-feishu": "0.1.5",
+    "@carvis/core": "0.1.5"
   },
   "scripts": {
     "dev": "bun run src/index.ts"

@@ -81,10 +81,6 @@ function createPrompter(
           return "cli-app-secret";
         case "allowFrom":
           return "*";
-        case "postgresUrl":
-          return "postgres://carvis";
-        case "redisUrl":
-          return "redis://carvis";
         case "workspacePath":
           return workspacePath;
         default:

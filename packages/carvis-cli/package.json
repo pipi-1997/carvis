@@ -1,6 +1,6 @@
 {
   "name": "@carvis/carvis-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Operator-facing CLI for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -28,10 +28,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "carvis": "node ./bin/carvis.cjs"
+  },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@carvis/bridge-codex": "0.1.1",
-    "@carvis/channel-feishu": "0.1.1",
-    "@carvis/core": "0.1.2"
+    "@carvis/bridge-codex": "0.1.5",
+    "@carvis/channel-feishu": "0.1.5",
+    "@carvis/core": "0.1.5"
   }
 }

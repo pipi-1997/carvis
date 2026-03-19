@@ -1,13 +1,23 @@
 # 架构图
 
-本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring`、`003-feishu-cardkit-results`、`004-codex-session-memory`、`007-agent-managed-scheduling`、`013-carvis-onboard-cli` 和 `014-feishu-media-delivery` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现 + 同 chat Codex 原生 session 续聊 + CLI-first 的 schedule 管理控制面 + session-scoped media delivery + operator-facing runtime CLI`。
+本文记录当前已落地的 `001-feishu-codex-mvp`、`002-local-runtime-wiring`、`003-feishu-cardkit-results`、`004-codex-session-memory`、`007-agent-managed-scheduling`、`013-carvis-onboard-cli`、`014-feishu-media-delivery` 和 `016-daemon-deployment` 实现，而不是远期全量蓝图。当前范围覆盖 `Feishu websocket + Codex CLI + 单 agent 固定 workspace + 本地单机双进程 runtime + 运行中卡片与单消息终态呈现 + 同 chat Codex 原生 session 续聊 + CLI-first 的 schedule 管理控制面 + session-scoped media delivery + operator-facing runtime CLI + daemon-managed local deployment`。
 
 ## 1. 运行时拓扑（当前实现）
 
 ```mermaid
 flowchart TB
+    subgraph Operator["Operator"]
+        CLI["carvis CLI\ninstall/onboard/daemon/infra/status/doctor/uninstall"]
+    end
+
     subgraph Channels["渠道"]
         FS["Feishu"]
+    end
+
+    subgraph Daemon["apps/daemon"]
+        DM_SOCK["Unix socket control plane"]
+        DM_SUP["Supervisor\nreconcile / start / stop"]
+        DM_STATE["Layered state snapshots"]
     end
 
     subgraph Gateway["apps/gateway"]
@@ -53,6 +63,12 @@ flowchart TB
     end
 
     FS --> PKG_FS --> GW_WS
+    CLI --> DM_SOCK
+    DM_SOCK --> DM_SUP
+    DM_SUP --> DM_STATE
+    DM_SUP --> GW_HTTP
+    DM_SUP --> EX_BOOT
+
     GW_HTTP --> GW_ROUTE
     GW_WS --> GW_ROUTE
 
@@ -151,9 +167,12 @@ sequenceDiagram
 ## 3. 本地运行时约束
 
 - `gateway` 与 `executor` 现在按双进程运行，统一从 `~/.carvis/config.json` 和环境变量读取运行时配置。
-- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，负责 `carvis onboard/start/stop/status/doctor/configure`。
+- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，当前已支持 `carvis install/onboard/daemon/infra/status/doctor/uninstall/configure`，其中旧 `start/stop` 作为兼容壳层仍保留。
+- 新增 `apps/daemon` 作为唯一长驻 supervisor，通过 Unix domain socket 暴露控制面，并把 daemon / infra / layered status 快照写入 `~/.carvis/state/*.json`。
 - CLI 通过 `packages/channel-feishu/src/setup.ts` 读取 adapter-owned setup / doctor 信息，而不是把飞书配置逻辑塞进 `FeishuAdapter`。
 - CLI 场景下，`gateway` 和 `executor` 会把摘要状态写入 `~/.carvis/state/*.json`，供 `status` 与 `stop` 使用。
+- `carvis install` 现在会写入 `install-manifest.json`、版本目录和平台 service definition；`carvis daemon start` 会真正拉起 `apps/daemon`。
+- `carvis status` / `carvis doctor` 现在统一按 install / infra / external dependency / daemon / runtime 五层聚合输出，同时保留 `gateway` / `executor` 顶层别名用于兼容旧脚本。
 - `apps/gateway` 与 `apps/executor` 在 `import.meta.main` 场景下都支持 `SIGINT` / `SIGTERM` 优雅退出。
 - `packages/channel-feishu` 负责 websocket 握手、allowlist / mention 过滤和 `InboundEnvelope` 归一化；这些细节不泄漏到 queue / run-flow。
 - `gateway` 在普通消息入队前会读取当前 `ConversationSessionBinding`，决定本轮 `RunRequest` 以 `fresh` 还是 `continuation` 模式进入执行链路；`/new` 只重置当前 `chat` 的续聊绑定，不打断活动运行。
@@ -181,7 +200,7 @@ sequenceDiagram
   - 在续聊 session 无效时返回 `session_invalid`
   - 启动期用 `carvis-schedule --help` 做 CLI readiness probe，并把 `carvis-schedule` / `carvis-media` bin 目录注入 PATH
 - `packages/core/src/runtime/runtime-factory.ts` 现在负责：
-  - 真实 Postgres / Redis 客户端装配
+  - 通过 Docker Compose 提供的 Postgres / Redis 客户端装配
   - migration 触发
   - queue / lock / heartbeat / cancel 协调对象创建
   - runtime fingerprint 发布与漂移检测
@@ -209,4 +228,5 @@ sequenceDiagram
 - `apps/gateway` 同时负责 gateway-owned `ScheduleManagementService`、`/internal/run-tools/execute` 和 `/internal/managed-schedules`。
 - `apps/gateway` 现在还负责 gateway-owned `MediaDeliveryService`、`RunMediaPresenter` 和 `/internal/run-media`。
 - `apps/executor` 负责启动期 readiness、消费队列、获取工作区锁、驱动 Codex bridge、处理取消和维护 heartbeat；若宿主 `Codex` 无法执行 `carvis-schedule`，executor 会在启动期直接进入 `CODEX_UNAVAILABLE`。
-- 真实本地联调依赖本机可访问的 Postgres、Redis 和已登录的 `codex` CLI。
+- 真实本地联调依赖兼容 Docker API 的宿主环境，由 daemon + Docker Compose 提供 Postgres/Redis 连接串。
+- 当前 daemon 已经落地 socket supervisor、install manifest、平台 service definition 生成和分层状态快照；Postgres / Redis 由 daemon 通过 Docker Compose 托管，其生命周期与状态都被完整记录。

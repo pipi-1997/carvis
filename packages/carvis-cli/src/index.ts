@@ -1,13 +1,21 @@
+import { stat } from "node:fs/promises";
+
 import { parseCarvisCommand } from "./command-parser.ts";
+import { createDaemonCommandService } from "./daemon-command.ts";
 import { createConfigureService, runConfigure } from "./configure.ts";
 import { createDoctorService } from "./doctor.ts";
+import { createInfraCommandService } from "./infra-command.ts";
+import { createInstallService } from "./install.ts";
+import { resolveManagedInstallLayout } from "./install-layout.ts";
 import { runOnboarding, type OnboardingPrompter, type ProbeFeishuCredentials } from "./onboarding.ts";
 import { renderHumanResult } from "./output.ts";
 import { createProcessManager } from "./process-manager.ts";
 import { createStatusService } from "./status.ts";
+import { createUninstallService } from "./uninstall.ts";
 import type { PromptFlow } from "./prompt-runtime.ts";
 
 export { parseCarvisCommand } from "./command-parser.ts";
+export { createDaemonCommandService } from "./daemon-command.ts";
 export { createConfigureService, runConfigure } from "./configure.ts";
 export {
   resolveCarvisRuntimeFileSet,
@@ -15,6 +23,9 @@ export {
   type CarvisRuntimeFileSet,
   type OnboardConfigDraft,
 } from "./config-writer.ts";
+export { createInfraCommandService } from "./infra-command.ts";
+export { createInstallService } from "./install.ts";
+export { resolveManagedInstallLayout, resolveManagedBundlePath, type ManagedInstallLayout } from "./install-layout.ts";
 export {
   createCarvisStateStore,
   type LocalRuntimeProcessState,
@@ -24,6 +35,7 @@ export { createProcessManager } from "./process-manager.ts";
 export { createDoctorService, summarizeDoctorChecks, type DoctorCheck } from "./doctor.ts";
 export { runOnboarding, type OnboardingPrompter, type OnboardingResult, type ProbeFeishuCredentials } from "./onboarding.ts";
 export { createStatusService, summarizeRuntimeStatus, type RuntimeStatusSummary } from "./status.ts";
+export { createUninstallService } from "./uninstall.ts";
 
 export async function runCarvisCli(
   argv: string[],
@@ -33,10 +45,25 @@ export async function runCarvisCli(
       run(section: "feishu" | "workspace"): Promise<Record<string, unknown> & { status: string; summary: string }>;
     };
     cwd?: string;
+    daemonCommandService?: {
+      run(input: {
+        operation: "restart" | "start" | "status" | "stop";
+      }): Promise<Record<string, unknown> & { status: string; summary: string }>;
+    };
     doctorService?: {
       run(): Promise<Record<string, unknown> & { status: string; summary: string }>;
     };
     env?: Record<string, string | undefined>;
+    infraCommandService?: {
+      run(input: {
+        operation: "rebuild" | "restart" | "start" | "status" | "stop";
+      }): Promise<Record<string, unknown> & { status: string; summary: string }>;
+    };
+    installService?: {
+      run(input?: {
+        repair?: boolean;
+      }): Promise<Record<string, unknown> & { status: string; summary: string }>;
+    };
     onboardingPrompter?: OnboardingPrompter;
     probeFeishuCredentials?: ProbeFeishuCredentials;
     processManager?: {
@@ -57,6 +84,11 @@ export async function runCarvisCli(
     };
     stdinIsTTY?: boolean;
     stdoutIsTTY?: boolean;
+    uninstallService?: {
+      run(input?: {
+        purge?: boolean;
+      }): Promise<Record<string, unknown> & { status: string; summary: string }>;
+    };
     stderr?(text: string): void;
     stdout?(text: string): void;
   },
@@ -80,7 +112,7 @@ export async function runCarvisCli(
     return 3;
   }
 
-  const emit = (command: "configure" | "doctor" | "onboard" | "start" | "status" | "stop", payload: Record<string, unknown>) => {
+  const emit = (command: "configure" | "daemon" | "doctor" | "infra" | "install" | "onboard" | "start" | "status" | "stop" | "uninstall", payload: Record<string, unknown>) => {
     if (outputMode === "json") {
       stdout(JSON.stringify(payload));
       return;
@@ -98,6 +130,20 @@ export async function runCarvisCli(
     && !stdinIsTTY) {
     stderr("当前不是交互式终端；请使用 TTY 运行，或显式提供非交互参数。");
     return 3;
+  }
+
+  if (parsed.command.action === "install") {
+    const installService = input?.installService ?? createInstallService({
+      env: input?.env,
+    });
+    const result = await installService.run({
+      repair: parsed.command.repair,
+    });
+    emit("install", {
+      command: "install",
+      ...result,
+    });
+    return result.status === "failed" ? 4 : 0;
   }
 
   if (parsed.command.action === "onboard") {
@@ -129,20 +175,37 @@ export async function runCarvisCli(
       return 2;
     }
 
-    const manager = input?.processManager ?? createProcessManager({
-      ...input?.processManagerOptions,
-      env: input?.env,
+    const installLayout = resolveManagedInstallLayout({
+      homeDir: input?.env?.HOME,
     });
-    if (!manager.start) {
-      emit("onboard", {
-        command: "onboard",
-        reason: "not_supported",
-        status: "failed",
-        summary: "start not supported",
-      });
-      return 4;
-    }
-    const result = await manager.start();
+    const hasInstallManifest = await stat(installLayout.installManifestPath).then(() => true).catch(() => false);
+
+    const result = input?.daemonCommandService
+      ? await input.daemonCommandService.run({
+          operation: "start",
+        })
+      : hasInstallManifest
+        ? await createDaemonCommandService({
+            env: input?.env,
+          }).run({
+            operation: "start",
+          })
+        : input?.processManager
+          ? await (async () => {
+              if (!input.processManager?.start) {
+                return {
+                  reason: "not_supported",
+                  status: "failed",
+                  summary: "start not supported",
+                };
+              }
+              return input.processManager.start();
+            })()
+          : {
+              reason: "not_installed",
+              status: "failed",
+              summary: "carvis install is required before onboard",
+            };
     if (result.status === "failed") {
       emit("onboard", {
         command: "onboard",
@@ -161,55 +224,131 @@ export async function runCarvisCli(
   }
 
   if (parsed.command.action === "start") {
-    const manager = input?.processManager ?? createProcessManager({
-      ...input?.processManagerOptions,
-      env: input?.env,
+    const result = input?.daemonCommandService
+      ? await input.daemonCommandService.run({
+          operation: "start",
+        })
+      : input?.processManager || input?.processManagerOptions
+        ? await (async () => {
+            const manager = input?.processManager ?? createProcessManager({
+              ...input?.processManagerOptions,
+              env: input?.env,
+            });
+            if (!manager.start) {
+              return {
+                reason: "not_supported",
+                status: "failed",
+                summary: "start not supported",
+              };
+            }
+            return manager.start();
+          })()
+        : await createDaemonCommandService({
+            env: input?.env,
+          }).run({
+            operation: "start",
+          }).catch(async () => {
+      const manager = input?.processManager ?? createProcessManager({
+        ...input?.processManagerOptions,
+        env: input?.env,
+      });
+      if (!manager.start) {
+        return {
+          reason: "not_supported",
+          status: "failed",
+          summary: "start not supported",
+        };
+      }
+      return manager.start();
     });
-    if (!manager.start) {
-      emit("start", {
-        command: "start",
-        reason: "not_supported",
-        status: "failed",
-        summary: "start not supported",
-      });
-      return 4;
-    }
-    const result = await manager.start();
-    if (result.status === "failed") {
-      emit("start", {
-        command: "start",
-        reason: result.reason,
-        status: result.status,
-        summary: result.summary,
-      });
-      return 4;
-    }
     emit("start", {
       command: "start",
+      ...(input?.daemonCommandService || !input?.processManager ? { mappedTo: "carvis daemon start" } : {}),
+      ...(typeof result.reason === "string" ? { reason: result.reason } : {}),
       status: result.status,
       summary: result.summary,
     });
-    return 0;
+    return result.status === "failed" ? 4 : 0;
   }
 
   if (parsed.command.action === "stop") {
-    const manager = input?.processManager ?? createProcessManager({
-      ...input?.processManagerOptions,
-      env: input?.env,
-    });
-    if (!manager.stop) {
-      emit("stop", {
-        command: "stop",
-        reason: "not_supported",
-        status: "failed",
-        summary: "stop not supported",
+    const result = input?.daemonCommandService
+      ? await input.daemonCommandService.run({
+          operation: "stop",
+        })
+      : input?.processManager || input?.processManagerOptions
+        ? await (async () => {
+            const manager = input?.processManager ?? createProcessManager({
+              ...input?.processManagerOptions,
+              env: input?.env,
+            });
+            if (!manager.stop) {
+              return {
+                reason: "not_supported",
+                status: "failed",
+                summary: "stop not supported",
+              };
+            }
+            return manager.stop();
+          })()
+        : await createDaemonCommandService({
+            env: input?.env,
+          }).run({
+            operation: "stop",
+          }).catch(async () => {
+      const manager = input?.processManager ?? createProcessManager({
+        ...input?.processManagerOptions,
+        env: input?.env,
       });
-      return 4;
-    }
-    const result = await manager.stop();
+      if (!manager.stop) {
+        return {
+          reason: "not_supported",
+          status: "failed",
+          summary: "stop not supported",
+        };
+      }
+      return manager.stop();
+    });
     emit("stop", {
       command: "stop",
+      ...(input?.daemonCommandService || !input?.processManager ? { mappedTo: "carvis daemon stop" } : {}),
+      ...(Array.isArray((result as { missing?: unknown }).missing) ? { missing: (result as { missing: unknown[] }).missing } : {}),
+      ...(Array.isArray((result as { removedState?: unknown }).removedState)
+        ? { removedState: (result as { removedState: unknown[] }).removedState }
+        : {}),
+      ...(typeof (result as { reason?: unknown }).reason === "string"
+        ? { reason: (result as { reason: string }).reason }
+        : {}),
+      status: result.status,
+      summary: result.summary,
+    });
+    return result.status === "failed" ? 4 : 0;
+  }
+
+  if (parsed.command.action === "daemon") {
+    const daemonCommandService = input?.daemonCommandService ?? createDaemonCommandService({
+      env: input?.env,
+    });
+    const result = await daemonCommandService.run({
+      operation: parsed.command.operation,
+    });
+    emit("daemon", {
       ...result,
+      command: "daemon",
+    });
+    return result.status === "failed" ? 4 : 0;
+  }
+
+  if (parsed.command.action === "infra") {
+    const infraCommandService = input?.infraCommandService ?? createInfraCommandService({
+      env: input?.env,
+    });
+    const result = await infraCommandService.run({
+      operation: parsed.command.operation,
+    });
+    emit("infra", {
+      ...result,
+      command: "infra",
     });
     return result.status === "failed" ? 4 : 0;
   }
@@ -249,6 +388,20 @@ export async function runCarvisCli(
     emit("configure", {
       command: "configure",
       ...result,
+    });
+    return result.status === "failed" ? 4 : 0;
+  }
+
+  if (parsed.command.action === "uninstall") {
+    const uninstallService = input?.uninstallService ?? createUninstallService({
+      env: input?.env,
+    });
+    const result = await uninstallService.run({
+      purge: parsed.command.purge,
+    });
+    emit("uninstall", {
+      ...result,
+      command: "uninstall",
     });
     return result.status === "failed" ? 4 : 0;
   }
@@ -307,11 +460,13 @@ function parseCliRuntimeOptions(argv: string[]): {
 
 function buildHelpText() {
   return [
-    "carvis <onboard|start|stop|status|doctor|configure>",
+    "carvis <install|onboard|daemon|infra|status|doctor|uninstall|start|stop|configure>",
     "",
     "Examples:",
+    "  carvis install",
     "  carvis onboard",
-    "  carvis start",
+    "  carvis daemon start",
+    "  carvis infra status",
     "  carvis configure feishu",
   ].join("\n");
 }

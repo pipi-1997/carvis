@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ExecutorStartupReport, RuntimeErrorState, RuntimeStatus } from "../domain/runtime-models.ts";
 
@@ -115,6 +115,19 @@ export async function clearLocalRuntimeProcessState(stateDir: string, role: Loca
   await rm(resolveLocalRuntimeStatePath(stateDir, role), {
     force: true,
   });
+}
+
+export async function readJsonStateFile<T>(path: string): Promise<T | null> {
+  const content = await readFile(path, "utf8").catch(() => null);
+  if (!content) {
+    return null;
+  }
+  return JSON.parse(content) as T;
+}
+
+export async function writeJsonStateFile(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true }).catch(() => {});
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function resolveLocalRuntimeStatePath(stateDir: string, role: LocalRuntimeRole) {

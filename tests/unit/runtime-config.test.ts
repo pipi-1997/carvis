@@ -49,6 +49,35 @@ describe("runtime config", () => {
     );
   });
 
+  test("进程环境缺少秘密时会从 ~/.carvis/runtime.env 回填", async () => {
+    const harness = await createRuntimeHarness({
+      env: {
+        FEISHU_APP_ID: "",
+        FEISHU_APP_SECRET: "",
+        POSTGRES_URL: "",
+        REDIS_URL: "",
+      },
+    });
+    cleanupCallbacks.push(harness.cleanup);
+
+    await writeFile(
+      join(harness.paths.configDir, "runtime.env"),
+      [
+        "FEISHU_APP_ID=file_app_id",
+        "FEISHU_APP_SECRET=file_app_secret",
+        "POSTGRES_URL=postgres://from-file",
+        "REDIS_URL=redis://from-file",
+      ].join("\n"),
+    );
+
+    const runtimeConfig = await loadRuntimeConfig({ env: harness.env });
+
+    expect(runtimeConfig.secrets.feishuAppId).toBe("file_app_id");
+    expect(runtimeConfig.secrets.feishuAppSecret).toBe("file_app_secret");
+    expect(runtimeConfig.secrets.postgresUrl).toBe("postgres://from-file");
+    expect(runtimeConfig.secrets.redisUrl).toBe("redis://from-file");
+  });
+
   test("相同配置生成稳定的 runtime fingerprint", async () => {
     const harness = await createRuntimeHarness();
     cleanupCallbacks.push(harness.cleanup);

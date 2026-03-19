@@ -23,8 +23,6 @@ describe("carvis cli config writer", () => {
       allowFrom: ["chat-a", "chat-b"],
       feishuAppId: "cli-app-id",
       feishuAppSecret: "cli-app-secret",
-      postgresUrl: "postgres://carvis:carvis@127.0.0.1:5432/carvis",
-      redisUrl: "redis://127.0.0.1:6379/0",
       requireMention: false,
       workspacePath,
     };
@@ -66,10 +64,9 @@ describe("carvis cli config writer", () => {
     expect(parsedConfig.workspaceResolver.templatePath).toBe(fileSet.templateDir);
     expect(runtimeEnvText).toContain("FEISHU_APP_ID=cli-app-id");
     expect(runtimeEnvText).toContain("FEISHU_APP_SECRET=cli-app-secret");
-    expect(runtimeEnvText).toContain("POSTGRES_URL=postgres://carvis:carvis@127.0.0.1:5432/carvis");
-    expect(runtimeEnvText).toContain("REDIS_URL=redis://127.0.0.1:6379/0");
     expect(configText).not.toContain("cli-app-secret");
-    expect(configText).not.toContain("postgres://carvis:carvis@127.0.0.1:5432/carvis");
+    expect(runtimeEnvText).not.toContain("POSTGRES_URL=");
+    expect(runtimeEnvText).not.toContain("REDIS_URL=");
   });
 
   test("允许显式覆盖 workspaceKey、managedWorkspaceRoot 和 templatePath", async () => {
@@ -89,8 +86,6 @@ describe("carvis cli config writer", () => {
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
         managedWorkspaceRoot,
-        postgresUrl: "postgres://custom",
-        redisUrl: "redis://custom",
         requireMention: true,
         templatePath: join(homeDir, "templates", "custom"),
         workspaceKey: "feature-a",
@@ -135,8 +130,6 @@ describe("carvis cli config writer", () => {
           feishuAppId: "app-id",
           feishuAppSecret: "app-secret",
           managedWorkspaceRoot: join(homeDir, "managed"),
-          postgresUrl: "postgres://custom",
-          redisUrl: "redis://custom",
           requireMention: true,
           templatePath: join(homeDir, "templates", "custom"),
           workspaceKey: "feature-a",
@@ -147,5 +140,41 @@ describe("carvis cli config writer", () => {
         },
       ),
     ).rejects.toThrow("workspaceResolver.registry.feature-a must stay within managedWorkspaceRoot");
+  });
+
+  test("保留 existingRuntimeEnv 里已注入的托管依赖地址", async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), "carvis-cli-config-"));
+    const workspacePath = join(homeDir, "workspace-main");
+    await mkdir(workspacePath, { recursive: true });
+
+    const fileSet = resolveCarvisRuntimeFileSet({
+      homeDir,
+    });
+
+    await writeCarvisRuntimeConfig(
+      {
+        adapter: "feishu",
+        allowFrom: ["*"],
+        feishuAppId: "new-app-id",
+        feishuAppSecret: "new-app-secret",
+        requireMention: false,
+        workspacePath,
+      },
+      {
+        existingRuntimeEnv: {
+          FEISHU_APP_ID: "old-app-id",
+          FEISHU_APP_SECRET: "old-app-secret",
+          POSTGRES_URL: "postgres://managed",
+          REDIS_URL: "redis://managed",
+        },
+        fileSet,
+      },
+    );
+
+    const runtimeEnvText = await readFile(fileSet.runtimeEnvPath, "utf8");
+    expect(runtimeEnvText).toContain("FEISHU_APP_ID=new-app-id");
+    expect(runtimeEnvText).toContain("FEISHU_APP_SECRET=new-app-secret");
+    expect(runtimeEnvText).toContain("POSTGRES_URL=postgres://managed");
+    expect(runtimeEnvText).toContain("REDIS_URL=redis://managed");
   });
 });

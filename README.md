@@ -5,7 +5,7 @@
 ## 适合谁
 
 - 想把 Feishu 群聊接到本地 `Codex CLI`
-- 想保留本地 runtime、Postgres、Redis 和日志可见性
+- 想保留本地 runtime、Carvis 管理的 Postgres/Redis 与日志可见性
 - 想要同 chat 续聊、单 workspace 串行执行和显式 sandbox 控制
 - 想把提醒 / 调度管理交给 agent，但仍保留 operator 侧的控制面和排障面
 
@@ -23,8 +23,8 @@
 
 - `bun --version`
 - `codex --version`
-- 可访问的 PostgreSQL
-- 可访问的 Redis
+- `docker --version`
+- `docker compose version`
 - 已配置好 Feishu 应用，并启用 `websocket` 长连接事件订阅
 
 ### 2. 全局安装 carvis CLI（推荐）
@@ -37,17 +37,15 @@ npm install -g @carvis/carvis-cli@latest
 pnpm add -g @carvis/carvis-cli@latest
 ```
 
-安装完成后，直接在终端里运行：
+安装完成后，按照以下顺序在终端里运行：
 
 ```bash
+carvis install
 carvis onboard
 ```
 
-它会：
-
-- 收集 Feishu 和 runtime 所需配置
-- 写出 `~/.carvis/config.json` 与 `~/.carvis/runtime.env`
-- 自动继续执行 `carvis start`
+`carvis install` 负责部署版本化 bundle、Docker Compose 资产和守护进程的自启动定义；
+`carvis onboard` 负责收集 Feishu 与 runtime 配置、写出 `~/.carvis/config.json` 与 `~/.carvis/runtime.env`，并请求 daemon 通过 Docker Compose 收敛 Postgres/Redis；只有在 infra ready 后才启动 `gateway`/`executor` 这样的 runtime 进程（`carvis start` 不再是直接入口）。
 
 后续常用命令也直接使用全局 `carvis` 即可，例如：
 
@@ -56,19 +54,15 @@ carvis status
 carvis doctor
 ```
 
-更完整的安装与运维路径见 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)。
+更完整的安装与运维路径见 [docs/guides/operator-handbook.md](docs/guides/operator-handbook.md)。Carvis 会利用守护进程 + Docker Compose 拉起 Postgres/Redis，而不是让用户单独安装这些服务。
 
 ### 3. 仓库内开发者安装路径（可选）
 
-如果你要在本仓库里开发 / 调试 carvis，而不是只用发布版 CLI，可以按传统 workspace 方式安装依赖：
+如果你要在本仓库里开发 / 调试 carvis，而不是只用发布版 CLI，可以按传统 workspace 方式安装依赖并完成本地部署：
 
 ```bash
 bun install
-```
-
-然后使用 workspace 内的 CLI 入口，这在本地开发时更方便：
-
-```bash
+bun run --filter @carvis/carvis-cli carvis install
 bun run --filter @carvis/carvis-cli carvis onboard
 ```
 
@@ -111,7 +105,7 @@ bun run --filter @carvis/carvis-cli carvis doctor
 - schedule 管理可交给 agent
   - 通过 `carvis-schedule` 控制面完成 create / list / update / disable
 - operator 友好
-  - 自带 `onboard/start/stop/status/doctor/configure` 和专题 runbook
+  - 自带 `install/onboard/daemon/infra/status/doctor/uninstall/configure`，`start/stop` 只作为兼容壳层
 
 ## Choose Your Path
 
@@ -140,7 +134,7 @@ bun run --filter @carvis/carvis-cli carvis doctor
 - 单 workspace 单活动运行与显式队列 / 锁语义
 - `/bind`、`/status`、`/mode`、`/new`、`/abort`
 - 运行中卡片、终态摘要卡和异常兜底消息
-- operator-facing `carvis onboard/start/stop/status/doctor/configure`
+- operator-facing `carvis install/onboard/daemon/infra/status/doctor/uninstall/configure` (旧 `start/stop` 保留兼容别名，但主契约变成 daemon 系列)
 
 当前不包括：
 

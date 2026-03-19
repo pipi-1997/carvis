@@ -1,0 +1,28 @@
+{
+  "bundle": {
+    "checksum": "dev-checksum",
+    "components": {
+      "daemon": {
+        "args": [],
+        "program": "bun"
+      },
+      "executor": {
+        "args": [],
+        "program": "bun"
+      },
+      "gateway": {
+        "args": [],
+        "program": "bun"
+      },
+      "postgres": {
+        "args": [],
+        "program": "managed-by-carvis"
+      },
+      "redis": {
+        "args": [],
+        "program": "managed-by-carvis"
+      }
+    }
+  },
+  "status": "installed"
+}

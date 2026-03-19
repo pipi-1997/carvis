@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
-import { summarizeRuntimeStatus } from "../../packages/carvis-cli/src/status.ts";
+import { createStatusService, summarizeRuntimeStatus } from "../../packages/carvis-cli/src/status.ts";
+import { DockerDaemonUnavailableError } from "../../packages/carvis-cli/src/docker-engine.ts";
+import { createRuntimeHarness } from "../support/runtime-harness.ts";
 
 describe("carvis cli status", () => {
   test("gateway health ready 且 executor ready 时汇总为 ready", () => {
@@ -123,5 +127,124 @@ describe("carvis cli status", () => {
     expect(summary.overallStatus).toBe("failed");
     expect(summary.gateway.lastErrorCode).toBe("FEISHU_WS_DISCONNECTED");
     expect(summary.executor.lastErrorCode).toBe("CODEX_UNAVAILABLE");
+  });
+
+  test("status 会主动探测 external dependency，而不只是判断是否已配置", async () => {
+    const harness = await createRuntimeHarness({
+      env: {
+        FEISHU_APP_ID: "",
+        FEISHU_APP_SECRET: "",
+        POSTGRES_URL: "",
+        REDIS_URL: "",
+      },
+    });
+
+    await writeFile(
+      join(harness.paths.configDir, "runtime.env"),
+      [
+        "FEISHU_APP_ID=file_app_id",
+        "FEISHU_APP_SECRET=file_app_secret",
+        "POSTGRES_URL=postgres://from-file",
+        "REDIS_URL=redis://from-file",
+      ].join("\n"),
+    );
+
+    const result = await createStatusService({
+      env: harness.env,
+      healthcheckCodex: async () => {
+        throw new Error("codex unavailable");
+      },
+      probeFeishuCredentialsImpl: async () => ({
+        code: "INVALID_CREDENTIALS",
+        message: "invalid app credential",
+        ok: false,
+      }),
+      processExists: () => false,
+    }).getStatus();
+
+    expect(result.externalDependencies.components.codex_cli.status).toBe("failed");
+    expect(result.externalDependencies.components.feishu_credentials.status).toBe("failed");
+
+    await harness.cleanup();
+  });
+
+  test("docker daemon 不可用时会归因到 infra 层并影响 overallStatus", async () => {
+    const harness = await createRuntimeHarness();
+    await writeFile(
+      join(harness.paths.configDir, "install-manifest.json"),
+      JSON.stringify({
+        activeBundlePath: join(harness.paths.configDir, "versions", "dev"),
+        activeVersion: "dev",
+        serviceDefinitionPath: join(harness.paths.homeDir, "Library", "LaunchAgents", "com.carvis.daemon.plist"),
+        status: "installed",
+      }),
+    );
+    await writeFile(
+      join(harness.paths.configDir, "state", "infra.json"),
+      JSON.stringify({
+        postgres: {
+          status: "ready",
+          summary: "postgres ready",
+        },
+        redis: {
+          status: "ready",
+          summary: "redis ready",
+        },
+      }),
+    ).catch(() => null);
+
+    const result = await createStatusService({
+      dockerEngine: {
+        async preflight() {
+          throw new DockerDaemonUnavailableError();
+        },
+      },
+      env: harness.env,
+      healthcheckCodex: async () => ({
+        message: "codex ready",
+        ok: true,
+      }),
+      probeFeishuCredentialsImpl: async () => ({
+        message: "feishu ready",
+        ok: true,
+      }),
+      processExists: () => false,
+    }).getStatus();
+
+    expect(result.infra.status).toBe("failed");
+    expect(result.infra.components.postgres.summary).toContain("docker daemon is not responding");
+    expect(result.overallStatus).toBe("failed");
+    expect(result.recommendedActions).toContain("carvis infra start");
+
+    await harness.cleanup();
+  });
+
+  test("未安装时不会因为 docker preflight 失败而误报 infra failed", async () => {
+    const harness = await createRuntimeHarness();
+
+    const result = await createStatusService({
+      dockerEngine: {
+        async preflight() {
+          throw new DockerDaemonUnavailableError();
+        },
+      },
+      env: harness.env,
+      healthcheckCodex: async () => ({
+        message: "codex ready",
+        ok: true,
+      }),
+      probeFeishuCredentialsImpl: async () => ({
+        message: "feishu ready",
+        ok: true,
+      }),
+      processExists: () => false,
+    }).getStatus();
+
+    expect(result.install.status).toBe("missing");
+    expect(result.infra.status).toBe("stopped");
+    expect(result.recommendedActions).toContain("carvis install");
+    expect(result.recommendedActions).not.toContain("carvis infra start");
+
+    await harness.cleanup();
   });
 });

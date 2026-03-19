@@ -1,6 +1,6 @@
 {
   "name": "@carvis/carvis-schedule-cli",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "description": "Schedule management CLI surface for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -29,6 +29,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@carvis/core": "0.1.1"
+    "@carvis/core": "0.1.5"
   }
 }

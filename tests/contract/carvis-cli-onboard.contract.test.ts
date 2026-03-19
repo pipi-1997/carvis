@@ -23,8 +23,6 @@ describe("carvis onboard contract", () => {
         allowFrom: "*",
         appId: "cli-app-id",
         appSecret: "cli-app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath: harness.workspacePath,
       }),
@@ -186,8 +184,6 @@ describe("carvis onboard contract", () => {
         appId: "new-app-id",
         appSecret: "new-app-secret",
         existingConfigAction: "modify",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: true,
         workspacePath: harness.workspacePath,
       }),
@@ -204,7 +200,10 @@ describe("carvis onboard contract", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(await Bun.file(harness.fileSet.runtimeEnvPath).text()).toContain("FEISHU_APP_ID=new-app-id");
+    const runtimeEnvText = await Bun.file(harness.fileSet.runtimeEnvPath).text();
+    expect(runtimeEnvText).toContain("FEISHU_APP_ID=new-app-id");
+    expect(runtimeEnvText).toContain("POSTGRES_URL=postgres://carvis");
+    expect(runtimeEnvText).toContain("REDIS_URL=redis://carvis");
     expect(await Bun.file(harness.fileSet.configPath).text()).toContain("\"requireMention\": true");
 
     await harness.cleanup();
@@ -256,8 +255,6 @@ describe("carvis onboard contract", () => {
         allowFrom: "*",
         appId: "bad-app-id",
         appSecret: "bad-app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath: harness.workspacePath,
       }),
@@ -310,8 +307,6 @@ describe("carvis onboard contract", () => {
         allowFrom: "*",
         appId: "cli-app-id",
         appSecret: "cli-app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath: missingWorkspace,
       }),
@@ -340,6 +335,44 @@ describe("carvis onboard contract", () => {
       reason: "invalid_workspace_path",
       status: "failed",
       summary: `workspacePath must be an existing directory: ${missingWorkspace}`,
+    });
+
+    await harness.cleanup();
+  });
+
+  test("未安装时 onboard 会明确指向 carvis install", async () => {
+    const harness = await createCarvisCliHarness();
+    const stdout: string[] = [];
+
+    const exitCode = await runCarvisCli(["onboard"], {
+      cwd: harness.workspacePath,
+      env: {
+        ...process.env,
+        HOME: harness.homeDir,
+      },
+      onboardingPrompter: createScriptedPrompter({
+        adapter: "feishu",
+        allowFrom: "*",
+        appId: "cli-app-id",
+        appSecret: "cli-app-secret",
+        requireMention: false,
+        workspacePath: harness.workspacePath,
+      }),
+      probeFeishuCredentials: async () => ({
+        message: "feishu credentials ready",
+        ok: true,
+      }),
+      stdout(text) {
+        stdout.push(text);
+      },
+    });
+
+    expect(exitCode).toBe(4);
+    expect(JSON.parse(stdout.at(-1) ?? "null")).toEqual({
+      command: "onboard",
+      reason: "not_installed",
+      status: "failed",
+      summary: "carvis install is required before onboard",
     });
 
     await harness.cleanup();
@@ -411,8 +444,6 @@ describe("carvis onboard contract", () => {
         appId: "new-app-id",
         appSecret: "new-app-secret",
         existingConfigAction: "modify",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath: nextWorkspace,
       }),
@@ -453,8 +484,6 @@ function createScriptedPrompter(script: Partial<{
   appId: string;
   appSecret: string;
   existingConfigAction: string;
-  postgresUrl: string;
-  redisUrl: string;
   requireMention: boolean;
   reuseExistingConfig: boolean;
   workspacePath: string;
@@ -480,10 +509,6 @@ function createScriptedPrompter(script: Partial<{
           return script.appSecret ?? "";
         case "allowFrom":
           return script.allowFrom ?? "*";
-        case "postgresUrl":
-          return script.postgresUrl ?? "";
-        case "redisUrl":
-          return script.redisUrl ?? "";
         case "workspacePath":
           return script.workspacePath ?? "";
         default:

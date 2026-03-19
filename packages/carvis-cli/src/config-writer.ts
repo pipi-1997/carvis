@@ -21,8 +21,6 @@ export type OnboardConfigDraft = {
   feishuAppId: string;
   feishuAppSecret: string;
   managedWorkspaceRoot?: string;
-  postgresUrl: string;
-  redisUrl: string;
   requireMention: boolean;
   templatePath?: string;
   workspaceKey?: string;
@@ -124,8 +122,6 @@ export async function writeCarvisRuntimeConfig(
     ...(options.existingRuntimeEnv ?? {}),
     FEISHU_APP_ID: draft.feishuAppId,
     FEISHU_APP_SECRET: draft.feishuAppSecret,
-    POSTGRES_URL: draft.postgresUrl,
-    REDIS_URL: draft.redisUrl,
   };
   const runtimeEnvText = serializeRuntimeEnv(runtimeEnv);
 
@@ -170,8 +166,6 @@ export async function readOnboardConfigDraft(fileSet: CarvisRuntimeFileSet): Pro
     feishuAppId: envValues.FEISHU_APP_ID ?? "",
     feishuAppSecret: envValues.FEISHU_APP_SECRET ?? "",
     managedWorkspaceRoot: config.workspaceResolver.managedWorkspaceRoot,
-    postgresUrl: envValues.POSTGRES_URL ?? "",
-    redisUrl: envValues.REDIS_URL ?? "",
     requireMention: config.feishu.requireMention,
     templatePath: config.workspaceResolver.templatePath,
     workspaceKey,

@@ -26,12 +26,16 @@ describe("carvis runtime lifecycle", () => {
         allowFrom: ["*"],
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath,
       },
-      { fileSet },
+      {
+        existingRuntimeEnv: {
+          POSTGRES_URL: "postgres://carvis",
+          REDIS_URL: "redis://carvis",
+        },
+        fileSet,
+      },
     );
 
     const startExitCode = await runCarvisCli(["start"], {
@@ -166,12 +170,16 @@ describe("carvis runtime lifecycle", () => {
         allowFrom: ["*"],
         feishuAppId: "app-id",
         feishuAppSecret: "app-secret",
-        postgresUrl: "postgres://carvis",
-        redisUrl: "redis://carvis",
         requireMention: false,
         workspacePath,
       },
-      { fileSet },
+      {
+        existingRuntimeEnv: {
+          POSTGRES_URL: "postgres://carvis",
+          REDIS_URL: "redis://carvis",
+        },
+        fileSet,
+      },
     );
     await stateStore.write({
       configFingerprint: "fingerprint-001",

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
 import { z } from "zod";
@@ -96,8 +96,9 @@ type LoadRuntimeConfigOptions = {
 export async function loadRuntimeConfig(
   options: LoadRuntimeConfigOptions = {},
 ): Promise<RuntimeConfig> {
-  const env = options.env ?? process.env;
-  const configPath = options.configPath ?? resolveRuntimeConfigPath(env);
+  const baseEnv = options.env ?? process.env;
+  const configPath = options.configPath ?? resolveRuntimeConfigPath(baseEnv);
+  const env = await mergeRuntimeEnvFile(baseEnv, configPath);
 
   if (!existsSync(configPath)) {
     throw new Error(`runtime config not found: ${configPath}`);
@@ -136,6 +137,35 @@ export function loadRuntimeSecrets(env: Record<string, string | undefined> = pro
     postgresUrl: requireEnv(env, "POSTGRES_URL"),
     redisUrl: requireEnv(env, "REDIS_URL"),
   };
+}
+
+async function mergeRuntimeEnvFile(
+  env: Record<string, string | undefined>,
+  configPath: string,
+): Promise<Record<string, string | undefined>> {
+  const runtimeEnvPath = join(dirname(configPath), "runtime.env");
+  const content = await readFile(runtimeEnvPath, "utf8").catch(() => "");
+  if (!content) {
+    return env;
+  }
+
+  const merged: Record<string, string | undefined> = {
+    ...env,
+  };
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const [key, ...rest] = line.split("=");
+    if (!key || merged[key]) {
+      continue;
+    }
+    merged[key] = rest.join("=");
+  }
+
+  return merged;
 }
 
 export function buildRuntimeFingerprint(config: RuntimeConfig): string {

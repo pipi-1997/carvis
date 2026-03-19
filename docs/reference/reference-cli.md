@@ -13,7 +13,9 @@ bun run --filter @carvis/carvis-cli carvis <command>
 例如：
 
 ```bash
+bun run --filter @carvis/carvis-cli carvis install
 bun run --filter @carvis/carvis-cli carvis onboard
+bun run --filter @carvis/carvis-cli carvis daemon status
 bun run --filter @carvis/carvis-cli carvis status
 ```
 
@@ -22,10 +24,14 @@ bun run --filter @carvis/carvis-cli carvis status
 ## 支持的命令
 
 - `onboard`
+- `install`
+- `daemon status|start|stop|restart`
+- `infra status|start|stop|restart|rebuild`
 - `start`
 - `stop`
 - `status`
 - `doctor`
+- `uninstall`
 - `configure feishu`
 - `configure workspace`
 
@@ -59,32 +65,55 @@ bun run --filter @carvis/carvis-cli carvis status --json
 
 ## 命令语义
 
+### `install`
+
+- 安装托管式本地部署布局
+- 写入版本化 bundle manifest、Docker Compose 资产、service definition、run/state/log/data 目录；启动前会 probe `docker` 与 `docker compose`
+- 成功后提示继续执行 `onboard`
+
 ### `onboard`
 
 - 首次引导入口
 - 收集 Feishu 和 runtime 所需配置
 - 写出 `~/.carvis/config.json` 和 `~/.carvis/runtime.env`
-- 成功后自动继续执行 `start`
+- 若安装层已存在，则优先通过 daemon 收敛 runtime；测试注入场景下仍兼容直接 process manager
+- onboarding 现在不再提示 `POSTGRES_URL` / `REDIS_URL`；这些由 Docker Compose 启动后自动写入
+
+### `daemon`
+
+- `daemon start|stop|restart|status`
+- 这是新的 runtime 托管主入口
+- 通过本地 Unix socket 与后台 supervisor 协作
+
+### `infra`
+
+- 负责展示和控制 Docker Compose 托管的 Postgres / Redis 层状态
+- daemon 不可达时会回退到持久化快照
 
 ### `start`
 
-- 基于现有配置拉起 `gateway` 和 `executor`
-- 收敛到 runtime ready 或结构化失败
+- 兼容入口
+- 主语义映射到 `carvis daemon start`
 
 ### `stop`
 
-- 停止本地 runtime
-- 清理 state 文件
+- 兼容入口
+- 主语义映射到 `carvis daemon stop`
 
 ### `status`
 
-- 聚合 gateway / executor 本地状态
-- 在可能的情况下刷新 `/healthz`
-- 适合配合 `--json` 做精确排障
+- 返回 install / infra / external dependency / daemon / runtime 五层聚合状态
+- 同时保留 `gateway` / `executor` 顶层别名，兼容现有脚本和测试
 
 ### `doctor`
 
-- 检查 runtime config、Feishu、Postgres、Redis、Codex CLI 和 `gateway /healthz`
+- 检查 runtime config、Feishu、Docker-managed Postgres/Redis、Codex CLI 和 `gateway /healthz`
+- 每个检查项带 layer 与推荐动作
+
+### `uninstall`
+
+- 默认移除 active bundle 和 service definition
+- `--purge` 额外清理 data / state
 
 ### `configure`
 
@@ -96,6 +125,8 @@ bun run --filter @carvis/carvis-cli carvis status --json
 ## 常用排障组合
 
 ```bash
+bun run --filter @carvis/carvis-cli carvis install --json
+bun run --filter @carvis/carvis-cli carvis daemon status --json
 bun run --filter @carvis/carvis-cli carvis status --json
 bun run --filter @carvis/carvis-cli carvis doctor
 ```

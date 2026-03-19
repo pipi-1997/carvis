@@ -131,3 +131,147 @@ export interface RuntimeFingerprintInput {
 }
 
 export type RuntimeStatus = "starting" | "ready" | "degraded" | "failed";
+
+export type ManagedInstallStatus = "missing" | "installed" | "partial" | "drifted";
+export type ManagedObservedState = "missing" | "stopped" | "starting" | "ready" | "degraded" | "failed";
+export type ManagedDesiredState = "running" | "stopped";
+export type ServiceManagerKind = "launchd_user" | "systemd_user";
+export type DaemonServiceObservedState = "not_installed" | "stopped" | "starting" | "ready" | "degraded" | "failed";
+export type LayeredStatus = "missing" | "stopped" | "starting" | "installed" | "ready" | "degraded" | "failed";
+export type ExternalDependencyId = "codex_cli" | "feishu_credentials";
+export type LocalUninstallScope = "remove_runtime_only" | "remove_runtime_keep_data" | "purge_all";
+
+export interface ManagedBundleComponent {
+  program: string;
+  args: string[];
+}
+
+export interface ManagedBundle {
+  version: string;
+  bundlePath: string;
+  platform: string;
+  checksum: string;
+  components: Record<string, ManagedBundleComponent>;
+  installedAt?: string;
+}
+
+export interface ManagedInstallManifest {
+  installRoot: string;
+  activeVersion: string | null;
+  activeBundlePath: string | null;
+  platform: string;
+  serviceManager: ServiceManagerKind | null;
+  serviceDefinitionPath: string | null;
+  installedAt: string | null;
+  lastRepairAt: string | null;
+  status: ManagedInstallStatus;
+  bundle?: ManagedBundle;
+}
+
+export interface ManagedInfraComponentState {
+  componentId: "postgres" | "redis";
+  version?: string | null;
+  binaryPath?: string | null;
+  dataDir?: string | null;
+  pid?: number | null;
+  port?: number | null;
+  desiredState: ManagedDesiredState;
+  observedState: ManagedObservedState;
+  health?: "unknown" | "healthy" | "unhealthy";
+  lastStartedAt?: string | null;
+  lastHealthcheckAt?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  summary?: string;
+}
+
+export interface ExternalDependencyStatus {
+  dependencyId: ExternalDependencyId;
+  status: "ready" | "failed" | "missing";
+  checkedAt?: string | null;
+  detail?: string | null;
+  lastErrorCode?: string | null;
+  summary?: string;
+}
+
+export interface DaemonServiceState {
+  serviceState: DaemonServiceObservedState;
+  pid?: number | null;
+  socketPath: string;
+  socketReachable?: boolean;
+  version?: string | null;
+  lastStartedAt?: string | null;
+  lastReconcileAt?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  logPath?: string | null;
+  summary?: string;
+}
+
+export interface RuntimeComponentState {
+  componentId: "gateway" | "executor";
+  pid?: number | null;
+  status: RuntimeStatus | "stopped";
+  ready?: boolean;
+  healthSnapshot?: GatewayRuntimeState | null;
+  startupReport?: ExecutorStartupReport | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  configFingerprint?: string | null;
+  summary?: string;
+}
+
+export interface LayeredStatusLayer<TComponent = Record<string, unknown>> {
+  status: LayeredStatus;
+  summary: string;
+  components?: TComponent;
+  recommendedAction?: string | null;
+}
+
+export interface LayeredStatusSnapshot {
+  install: LayeredStatusLayer<ManagedInstallManifest>;
+  infra: LayeredStatusLayer<Record<string, ManagedInfraComponentState>>;
+  externalDependencies: LayeredStatusLayer<Record<string, ExternalDependencyStatus>>;
+  daemon: LayeredStatusLayer<DaemonServiceState>;
+  runtime: LayeredStatusLayer<Record<string, RuntimeComponentState>>;
+  overallStatus: RuntimeStatus | "stopped";
+  recommendedActions: string[];
+}
+
+export interface LayeredDoctorCheck {
+  checkId: string;
+  layer: "install" | "infra" | "external_dependency" | "daemon" | "runtime";
+  status: "passed" | "failed" | "skipped";
+  message: string;
+  detail?: string;
+  recommendedAction?: string;
+}
+
+export interface LayeredDoctorReport {
+  checks: LayeredDoctorCheck[];
+  failedChecks: LayeredDoctorCheck[];
+  installLayer: LayeredStatusLayer<ManagedInstallManifest>;
+  infraLayer: LayeredStatusLayer<Record<string, ManagedInfraComponentState>>;
+  externalDependencyLayer: LayeredStatusLayer<Record<string, ExternalDependencyStatus>>;
+  daemonLayer: LayeredStatusLayer<DaemonServiceState>;
+  runtimeLayer: LayeredStatusLayer<Record<string, RuntimeComponentState>>;
+  status: "passed" | "failed";
+  summary: string;
+}
+
+export interface DaemonControlRequest {
+  requestId: string;
+  action:
+    | "daemon_status"
+    | "daemon_restart"
+    | "daemon_stop"
+    | "infra_rebuild"
+    | "infra_restart"
+    | "infra_start"
+    | "infra_status"
+    | "infra_stop"
+    | "runtime_reconcile";
+  scope?: "daemon" | "infra" | "runtime";
+  requestedAt: string;
+  arguments?: Record<string, unknown>;
+}

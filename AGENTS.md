@@ -1,6 +1,6 @@
 # carvis 开发指南
 
-根据所有 feature plan 自动生成。最后更新时间：2026-03-09
+根据所有 feature plan 自动生成。最后更新时间：2026-03-20
 
 ## 宪法约束
 
@@ -16,6 +16,7 @@
 - Hono
 - PostgreSQL
 - Redis
+- Docker + Docker Compose
 - Feishu websocket
 - Codex CLI
 
@@ -36,10 +37,14 @@ tests/
 - `bun run release:version`
 - `bun run release:publish`
 - `bun run --filter @carvis/carvis-cli carvis onboard`
+- `bun run --filter @carvis/carvis-cli carvis install`
+- `bun run --filter @carvis/carvis-cli carvis daemon status`
+- `bun run --filter @carvis/carvis-cli carvis infra status`
 - `bun run --filter @carvis/carvis-cli carvis start`
 - `bun run --filter @carvis/carvis-cli carvis stop`
 - `bun run --filter @carvis/carvis-cli carvis status`
 - `bun run --filter @carvis/carvis-cli carvis doctor`
+- `bun run --filter @carvis/carvis-cli carvis uninstall`
 - `bun run dev:gateway`
 - `bun run dev:executor`
 - `bun run start:gateway`
@@ -76,17 +81,19 @@ tests/
 - 飞书当前支持 `/mode`、`/mode workspace-write`、`/mode danger-full-access`、`/mode reset`；override 只作用于当前 `chat`，固定 30 分钟过期。
 - `/new` 当前会重置当前 `chat` 的续聊绑定并清除 sandbox override，但不会打断活动运行。
 - `/status` 当前返回 workspace、active run、最近一次请求是否排队、前方队列长度、续聊状态，以及当前 sandbox mode / 来源 / override 到期或已过期状态；不返回完整队列列表。
-- 本地 runtime 约定从 `~/.carvis/config.json` 读取结构化配置，并从 `POSTGRES_URL`、`REDIS_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 读取环境相关信息。
-- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，当前已支持 `carvis onboard/start/stop/status/doctor/configure`。
-- `carvis onboard` 会在完成 Feishu + runtime 依赖引导后自动继续执行 `carvis start`。
+- 本地 runtime 约定从 `~/.carvis/config.json` 读取结构化配置，并从 `POSTGRES_URL`、`REDIS_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` 读取环境相关信息，`POSTGRES_URL`/`REDIS_URL` 由 daemon + Docker Compose 管理注入。
+- 新增 `packages/carvis-cli` 作为 operator-facing 总入口，当前已支持 `carvis install/onboard/daemon/infra/status/doctor/uninstall/configure`。
+- 新增 `apps/daemon` 作为本地托管 supervisor，负责 Unix socket 控制面、daemon state、infra state 和 layered status snapshot。
+- `carvis install` 会写入 `install-manifest.json`、版本目录和平台 service definition。
+- `carvis onboard` 在安装层存在时优先通过 `daemon start` 收敛；仅在测试注入场景下兼容直接 process manager fallback。
 - `packages/channel-feishu/src/setup.ts` 负责飞书 setup spec、字段说明、获取指引、输入校验和凭据 probe。
 - CLI 场景下，`gateway` 与 `executor` 会写入 `~/.carvis/state/gateway.json`、`~/.carvis/state/executor.json`，并支持 `SIGINT` / `SIGTERM` 优雅退出。
+- daemon 现在会把 `daemon.json`、`infra.json` 和 `layered-status.json` 写入 `~/.carvis/state/`。
 - `CONFIG_DRIFT` 通过 Redis 中共享的 runtime fingerprint 检测；出现漂移时 `gateway /healthz` 降级，`executor` 拒绝消费。
 - 本机验证结果：
   - `bun run lint`
   - `bun test`
   - `codex --version`
-  - 当前机器未安装 `postgres` / `redis-server`，因此真实外部依赖启动需要操作者自行准备。
 - `003-feishu-cardkit-results` 当前实现状态：
   - 普通消息保持 `OK` reaction 作为开始工作信号
   - `run.started` 后创建运行中 `interactive` 卡片
@@ -102,3 +109,11 @@ tests/
   - `/bind` 切 workspace 时也会清理 sandbox override，避免跨 workspace 沿用旧权限
   - `/status` 会暴露 `fresh` / `continued` / `recent_reset` / `recent_recovered` / `recent_recovery_failed`，以及当前 sandbox mode / 来源 / override 状态
 <!-- MANUAL ADDITIONS END -->
+
+## Active Technologies
+- Bun 1.3.9、TypeScript 5.9.x + Hono、Zod、`pg`、`redis`、`@larksuiteoapi/node-sdk`、Codex CLI、`launchd` / `systemd --user`、本地 Unix domain socket IPC (016-daemon-deployment)
+- Docker + Docker Compose（daemon 通过 Compose 托管 Postgres/Redis）
+- PostgreSQL、Redis、`~/.carvis` 下的 config/state/logs/install manifest/data dirs (016-daemon-deployment)
+
+## Recent Changes
+- 016-daemon-deployment: Added Bun 1.3.9、TypeScript 5.9.x + Hono、Zod、`pg`、`redis`、`@larksuiteoapi/node-sdk`、Codex CLI、`launchd` / `systemd --user`、本地 Unix domain socket IPC
