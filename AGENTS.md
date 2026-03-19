@@ -32,6 +32,9 @@ tests/
 - `bun test`
 - `bun run test:unit`
 - `bun run lint`
+- `bunx changeset`
+- `bun run release:version`
+- `bun run release:publish`
 - `bun run --filter @carvis/carvis-cli carvis onboard`
 - `bun run --filter @carvis/carvis-cli carvis start`
 - `bun run --filter @carvis/carvis-cli carvis stop`
@@ -47,6 +50,7 @@ tests/
 - 优先保持 `apps/gateway`、`apps/executor`、`packages/*` 的边界清晰
 - 中文文档优先，路径、命令、代码标识和结构化 ID 保持原文
 - 涉及运行生命周期的变更必须同步更新契约测试和集成测试
+- 公开 `@carvis/*` package 的版本推进必须通过 `changeset + release PR` 完成，不要手工批量修改多个 `package.json` 版本号模拟发版
 
 ## 最近变更
 
@@ -56,6 +60,13 @@ tests/
 - `004-codex-session-memory`: 新增同一飞书 `chat` 续用 Codex 原生 session、`/new` 重置与单次自动恢复设计与 planning 产物
 
 <!-- MANUAL ADDITIONS START -->
+- 当前仓库的公开发版主路径是 `changeset -> release PR -> merge release PR -> npm publish + tag + GitHub release`。
+- 当前公开 npm 发布默认通过 trusted publishing 完成；不要为 CI 持久保存或重新引入 `NPM_TOKEN`。
+- 只有命中公开 release group 的 changeset 才会推动公开 release PR；docs-only、internal-only 或 ineligible package 改动不应推动公开发版。
+- `@carvis/carvis-media-cli` 当前是内部 transport CLI，不参与 npm 公开发布，也不属于公开 release group。
+- agent、开发者和 operator 都必须遵守 release PR 规则；若仓库中存在多个 AI 工具入口或镜像指导文件，这些规则必须同步写入所有现有入口。
+- 本地可选使用 `gh` 查看 release PR、workflow run 和 GitHub release，但 `gh` 只是辅助工具，不是 CI 主流程依赖。
+- 发布失败时优先使用 workflow rerun；若仍失败，再按 release runbook 走手工 fallback，依赖 `skipped_existing_version` 语义保持幂等。
 - 当前实现已落地本地单机双进程 runtime wiring：`gateway` 暴露 `/healthz` 并接入 Feishu `websocket`，`executor` 接入真实启动期 readiness 与消费循环。
 - `packages/channel-feishu` 现在同时包含 webhook 归一化、runtime sender、websocket ingress、allowlist / mention 过滤。
 - `packages/bridge-codex` 现在同时包含测试用脚本化 transport 和默认的 `codex exec` CLI transport。

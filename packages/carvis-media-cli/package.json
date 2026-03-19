@@ -13,7 +13,7 @@
     "media",
     "cli"
   ],
-  "private": false,
+  "private": true,
   "type": "module",
   "bin": {
     "carvis-media": "./bin/carvis-media"
@@ -22,9 +22,6 @@
     "src",
     "bin"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "exports": {
     ".": "./src/index.ts"
   },

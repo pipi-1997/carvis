@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.3/schema.json",
+  "changelog": false,
+  "commit": false,
+  "fixed": [
+    [
+      "@carvis/core",
+      "@carvis/channel-feishu",
+      "@carvis/bridge-codex",
+      "@carvis/carvis-schedule-cli",
+      "@carvis/gateway",
+      "@carvis/executor",
+      "@carvis/carvis-cli"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@carvis/carvis-media-cli",
+    "@carvis/skill-media-cli",
+    "@carvis/skill-schedule-cli"
+  ]
+}

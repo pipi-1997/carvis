@@ -1,9 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { runCarvisMediaCli } from "../../packages/carvis-media-cli/src/index.ts";
 import { createHarness } from "../support/harness.ts";
+
+const ROOT_DIR = fileURLToPath(new URL("../..", import.meta.url));
+const CARVIS_MEDIA_BIN = join(
+  ROOT_DIR,
+  "packages",
+  "carvis-media-cli",
+  "bin",
+  "carvis-media.cjs",
+);
+const CARVIS_MEDIA_BIN_DIR = join(
+  ROOT_DIR,
+  "packages",
+  "carvis-media-cli",
+  "bin",
+);
 
 function createHarnessFetch(harness: ReturnType<typeof createHarness>) {
   return async (input: string | URL | Request, init?: RequestInit) => {
@@ -97,7 +113,7 @@ describe("carvis-media cli contract", () => {
       const command = Bun.spawn(
         [
           process.execPath,
-          "/Users/pipi/workspace/carvis/.worktrees/feishu-media-delivery/packages/carvis-media-cli/bin/carvis-media.cjs",
+          CARVIS_MEDIA_BIN,
           "send",
           "--path",
           join(workspace, "README.md"),
@@ -187,7 +203,7 @@ describe("carvis-media cli contract", () => {
           cwd: workspace,
           env: {
             ...process.env,
-            PATH: `/Users/pipi/workspace/carvis/.worktrees/feishu-media-delivery/packages/carvis-media-cli/bin:${process.env.PATH ?? ""}`,
+            PATH: `${CARVIS_MEDIA_BIN_DIR}:${process.env.PATH ?? ""}`,
             CARVIS_GATEWAY_BASE_URL: `http://127.0.0.1:${server.port}`,
             CARVIS_WORKSPACE: workspace,
             CARVIS_RUN_ID: run.id,

@@ -42,4 +42,10 @@ tests/
 - main: Added
 
 <!-- MANUAL ADDITIONS START -->
+- 公开 `@carvis/*` package 的版本推进必须通过 `changeset + release PR`，不要手工批量修改多个 `package.json` 版本号模拟发版
+- 公开 npm 发布默认通过 trusted publishing 完成，不要为 CI 保存或回填长期 `NPM_TOKEN`
+- `@carvis/carvis-media-cli` 当前是内部 transport CLI，不参与 npm 公开发布，也不属于公开 release group
+- docs-only、internal-only 或不命中公开 release group 的改动不应推动公开 release PR
+- 若仓库中存在多个 AI 工具入口或镜像指导文件，release 规则必须同步到所有现有入口
+- `gh` 只是本地辅助工具，不是 CI 主流程依赖
 <!-- MANUAL ADDITIONS END -->

@@ -60,3 +60,15 @@ Codex 会把 `prompts/` 下的 `xxx.md` 显示为 **`/prompts:xxx`**，例如：
 - 以及其他 `speckit.*`
 
 修改过 `.codex/prompts/*.md` 后，需**重启 Codex**（或新开会话/重开面板）后才会加载。
+
+---
+
+## Release 协作规则
+
+- 公开 `@carvis/*` package 的版本推进必须通过 `changeset + release PR`
+- 公开 npm 发布默认通过 trusted publishing 完成，不要为 CI 保存或回填长期 `NPM_TOKEN`
+- `@carvis/carvis-media-cli` 当前是内部 transport CLI，不参与 npm 公开发布，也不属于公开 release group
+- 不要手工批量修改多个 `package.json` 版本号模拟发版
+- docs-only、internal-only 或不命中公开 release group 的改动通常不需要 changeset
+- 若仓库中还存在其他 AI 工具入口或镜像指导文件，release 规则必须同步到所有现有入口
+- `gh` 可以作为本地查看 release PR / workflow / release 状态的辅助工具，但不是 CI 主流程依赖

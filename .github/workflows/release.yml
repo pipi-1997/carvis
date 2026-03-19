@@ -1,0 +1,165 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global npm@11.11.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Detect eligible changeset gate
+        id: eligible
+        shell: bash
+        run: |
+          echo "Checking eligible changeset gate"
+          echo "eligible=$(node ./scripts/release/check-eligible-changesets.mjs)" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release PR
+        id: changesets
+        if: steps.eligible.outputs.eligible == 'true'
+        uses: changesets/action@v1
+        with:
+          version: bun run release:version
+          publish: bun run release:publish
+          createGithubReleases: false
+        env:
+          CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Expose hasChangesets state
+        if: steps.eligible.outputs.eligible == 'true'
+        run: echo "hasChangesets=${{ steps.changesets.outputs.hasChangesets }}"
+
+      - name: Skip release PR when no eligible changeset exists
+        if: steps.eligible.outputs.eligible != 'true'
+        run: echo "No eligible changeset found; skip public release PR."
+
+      - name: Render release summary
+        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const summary = JSON.parse(
+            fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE, "utf8"),
+          );
+          const lines = [
+            `# Release ${summary.tagName}`,
+            "",
+            `- Unified version: \`${summary.version}\``,
+            `- Status: \`${summary.status}\``,
+            "",
+            "| Package | Version | Status | Summary |",
+            "|---------|---------|--------|---------|",
+            ...summary.results.map((entry) =>
+              `| ${entry.name} | ${entry.version} | ${entry.status} | ${entry.summary} |`
+            ),
+            "",
+            "## Retry Guidance",
+            "",
+            "- Preferred: rerun this workflow",
+            "- Fallback: use the documented manual publish path",
+          ];
+          const markdown = `${lines.join("\n")}\n`;
+          fs.writeFileSync("release-summary.md", markdown);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown);
+          NODE
+
+      - name: Upload release summary artifact
+        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-summary
+          path: |
+            ./.carvis-release-summary.json
+            ./release-summary.md
+
+      - name: Create git tag
+        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        env:
+          CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
+        run: |
+          tag_name="$(node -e 'const fs=require("node:fs"); const summary=JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE,"utf8")); process.stdout.write(summary.tagName ?? "")')"
+          if [ -z "$tag_name" ]; then
+            echo "No tag name found in release summary"
+            exit 1
+          fi
+
+          if git rev-parse "$tag_name" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/${tag_name}" | grep -q .; then
+            echo "Tag ${tag_name} already exists, skipping tag creation."
+            exit 0
+          fi
+
+          git tag "$tag_name"
+          git push origin "$tag_name"
+
+      - name: Sync GitHub release
+        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        uses: actions/github-script@v7
+        env:
+          CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
+        with:
+          script: |
+            const fs = require("node:fs");
+            const summary = JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE, "utf8"));
+            const body = fs.readFileSync("release-summary.md", "utf8");
+            const tag = summary.tagName;
+
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                body,
+                name: tag,
+              });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: tag,
+                body,
+              });
+            }

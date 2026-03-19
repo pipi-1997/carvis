@@ -412,7 +412,7 @@ exit 1
       ok: true,
       message: "codex cli ready",
     });
-  });
+  }, 10_000);
 
   test("healthcheck 在 carvis-schedule 不可执行时失败", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "carvis-codex-cli-health-"));

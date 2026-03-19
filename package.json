@@ -8,8 +8,12 @@
     "packages/*"
   ],
   "scripts": {
+    "changeset": "bunx changeset",
     "dev:gateway": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/gateway dev",
     "dev:executor": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/executor dev",
+    "release:status": "node ./scripts/release/publishable-workspaces.mjs",
+    "release:version": "bunx changeset version",
+    "release:publish": "bash ./scripts/publish-npm.sh",
     "start:gateway": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/gateway dev",
     "start:executor": "./scripts/run-with-runtime-env.sh bun run --filter @carvis/executor dev",
     "test:003": "bun test tests/unit/presentation-setup.test.ts tests/unit/runtime-harness.test.ts",
@@ -22,6 +26,7 @@
     "publish:npm": "bash ./scripts/publish-npm.sh"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@types/bun": "^1.3.9",
     "@types/pg": "^8.15.5",
     "typescript": "^5.9.2"
