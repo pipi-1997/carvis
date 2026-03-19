@@ -46,7 +46,6 @@ jobs:
 
       - name: Create or update release PR
         id: changesets
-        if: steps.eligible.outputs.eligible == 'true'
         uses: changesets/action@v1
         with:
           version: bun run release:version
@@ -57,15 +56,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Expose hasChangesets state
-        if: steps.eligible.outputs.eligible == 'true'
+        if: always()
         run: echo "hasChangesets=${{ steps.changesets.outputs.hasChangesets }}"
 
-      - name: Skip release PR when no eligible changeset exists
-        if: steps.eligible.outputs.eligible != 'true'
-        run: echo "No eligible changeset found; skip public release PR."
+      - name: Expose published state
+        if: always()
+        run: echo "published=${{ steps.changesets.outputs.published }}"
+
+      - name: Skip release workflow when there is no release work
+        if: steps.changesets.outputs.hasChangesets != 'true' && steps.changesets.outputs.published != 'true'
+        run: echo "No release PR update or publish work for this push."
 
       - name: Render release summary
-        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.published == 'true'
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
         run: |
@@ -97,7 +100,7 @@ jobs:
           NODE
 
       - name: Upload release summary artifact
-        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.published == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-summary
@@ -106,7 +109,7 @@ jobs:
             ./release-summary.md
 
       - name: Create git tag
-        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.published == 'true'
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
         run: |
@@ -125,7 +128,7 @@ jobs:
           git push origin "$tag_name"
 
       - name: Sync GitHub release
-        if: steps.eligible.outputs.eligible == 'true' && steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.published == 'true'
         uses: actions/github-script@v7
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
