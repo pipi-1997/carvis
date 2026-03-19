@@ -1,6 +1,6 @@
 {
   "name": "@carvis/daemon",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Managed local supervisor for the carvis runtime.",
   "license": "MIT",
   "private": false,
@@ -13,8 +13,8 @@
     "bin"
   ],
   "dependencies": {
-    "@carvis/carvis-cli": "0.1.5",
-    "@carvis/core": "0.1.5"
+    "@carvis/carvis-cli": "0.1.6",
+    "@carvis/core": "0.1.6"
   },
   "scripts": {
     "dev": "bun run src/index.ts"
