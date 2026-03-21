@@ -6,7 +6,7 @@
   "private": false,
   "type": "module",
   "bin": {
-    "carvis-daemon": "./bin/carvis-daemon.cjs"
+    "carvis-daemon": "bin/carvis-daemon.cjs"
   },
   "files": [
     "src",

@@ -5,9 +5,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/carvis-dev/carvis.git"
+    "url": "git+https://github.com/pipi-1997/carvis.git"
   },
-  "homepage": "https://github.com/carvis-dev/carvis#readme",
+  "homepage": "https://github.com/pipi-1997/carvis#readme",
   "keywords": [
     "carvis",
     "cli",
@@ -16,7 +16,7 @@
   "private": false,
   "type": "module",
   "bin": {
-    "carvis": "./bin/carvis.cjs"
+    "carvis": "bin/carvis.cjs"
   },
   "files": [
     "src",
