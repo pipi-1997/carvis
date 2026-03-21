@@ -55,6 +55,53 @@ jobs:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Derive carvis release state
+        id: carvis_release
+        if: always()
+        env:
+          CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
+        shell: bash
+        run: |
+          summary_file="${CARVIS_RELEASE_SUMMARY_FILE}"
+
+          summary_present="false"
+          tag_name=""
+          version=""
+          did_fail="false"
+          did_publish_any="false"
+
+          if [ -f "$summary_file" ]; then
+            summary_present="true"
+            tag_name="$(node -e 'const fs=require("node:fs"); const s=JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE,"utf8")); process.stdout.write(String(s.tagName ?? ""))')"
+            version="$(node -e 'const fs=require("node:fs"); const s=JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE,"utf8")); process.stdout.write(String(s.version ?? ""))')"
+            did_fail="$(node -e 'const fs=require("node:fs"); const s=JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE,"utf8")); const failed = s.status==="failed" || (Array.isArray(s.results) && s.results.some(r => r.status==="failed")); process.stdout.write(failed ? "true" : "false")')"
+            did_publish_any="$(node -e 'const fs=require("node:fs"); const s=JSON.parse(fs.readFileSync(process.env.CARVIS_RELEASE_SUMMARY_FILE,"utf8")); const any = Array.isArray(s.results) && s.results.some(r => r.status==="published"); process.stdout.write(any ? "true" : "false")')"
+          fi
+
+          tag_exists="false"
+          if [ -n "$tag_name" ]; then
+            if git ls-remote --tags origin "refs/tags/${tag_name}" | grep -q .; then
+              tag_exists="true"
+            fi
+          fi
+
+          # We treat "published" as the happy path, but also support the recovery case:
+          # packages already published (skipped_existing_version) yet the git tag/release is missing.
+          should_release="false"
+          if [ "$did_publish_any" = "true" ]; then
+            should_release="true"
+          elif [ "$summary_present" = "true" ] && [ "$did_fail" = "false" ] && [ -n "$tag_name" ] && [ "$tag_exists" = "false" ]; then
+            should_release="true"
+          fi
+
+          echo "summary_present=$summary_present" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "did_fail=$did_fail" >> "$GITHUB_OUTPUT"
+          echo "did_publish_any=$did_publish_any" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+
       - name: Expose hasChangesets state
         if: always()
         run: echo "hasChangesets=${{ steps.changesets.outputs.hasChangesets }}"
@@ -64,11 +111,11 @@ jobs:
         run: echo "published=${{ steps.changesets.outputs.published }}"
 
       - name: Skip release workflow when there is no release work
-        if: steps.changesets.outputs.hasChangesets != 'true' && steps.changesets.outputs.published != 'true'
+        if: steps.carvis_release.outputs.should_release != 'true' && steps.changesets.outputs.hasChangesets != 'true'
         run: echo "No release PR update or publish work for this push."
 
       - name: Render release summary
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.carvis_release.outputs.should_release == 'true'
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
         run: |
@@ -100,7 +147,7 @@ jobs:
           NODE
 
       - name: Upload release summary artifact
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.carvis_release.outputs.should_release == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-summary
@@ -109,7 +156,7 @@ jobs:
             ./release-summary.md
 
       - name: Create git tag
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.carvis_release.outputs.should_release == 'true'
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
         run: |
@@ -128,7 +175,7 @@ jobs:
           git push origin "$tag_name"
 
       - name: Sync GitHub release
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.carvis_release.outputs.should_release == 'true'
         uses: actions/github-script@v7
         env:
           CARVIS_RELEASE_SUMMARY_FILE: ./.carvis-release-summary.json
