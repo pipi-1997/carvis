@@ -7,6 +7,12 @@ import {
 } from "./publishable-workspaces.mjs";
 import { getUnifiedReleaseVersion } from "./release-group.mjs";
 
+function truncate(text, max = 4000) {
+  if (!text) return "";
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n... (truncated ${text.length - max} chars)`;
+}
+
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
@@ -19,6 +25,13 @@ function runCommand(command, args, options = {}) {
     stderr: result.stderr ?? "",
     stdout: result.stdout ?? "",
   };
+}
+
+function hasGitHubOidcEnv() {
+  return Boolean(
+    process.env.ACTIONS_ID_TOKEN_REQUEST_URL &&
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+  );
 }
 
 function ensureNpmLogin(npmCli) {
@@ -68,7 +81,14 @@ export async function publishReleasePackages({
       continue;
     }
 
-    const published = runCommand(npmCli, ["publish", "--access", "public"], {
+    // GitHub OIDC trusted publishing requires provenance to mint the ephemeral token.
+    // Locally we keep the publish args minimal to avoid surprising maintainers.
+    const publishArgs = ["publish", "--access", "public"];
+    if (hasGitHubOidcEnv()) {
+      publishArgs.push("--provenance");
+    }
+
+    const published = runCommand(npmCli, publishArgs, {
       cwd,
     });
 
@@ -84,12 +104,24 @@ export async function publishReleasePackages({
       continue;
     }
 
+    // Surface npm publish diagnostics in CI logs (and in the JSON summary) so
+    // we can see whether the failure is trusted publishing setup, access, etc.
+    const diag = {
+      exitCode: published.exitCode,
+      stdout: truncate(published.stdout),
+      stderr: truncate(published.stderr),
+    };
+    process.stderr.write(
+      `[npm publish] ${packageSpec} failed\n${JSON.stringify(diag, null, 2)}\n`,
+    );
+
     results.push({
       name: workspace.name,
       path: workspace.path,
       registryRef: packageSpec,
       status: "failed",
       summary: `${packageSpec} publish failed`,
+      diagnostics: diag,
       version: workspace.version,
     });
   }

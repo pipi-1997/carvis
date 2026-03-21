@@ -4,6 +4,11 @@ export interface PublishResultEntry {
   registryRef: string;
   status: "failed" | "published" | "skipped_existing_version";
   summary: string;
+  diagnostics?: {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  };
   version: string | null;
 }
 
