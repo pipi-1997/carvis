@@ -190,9 +190,9 @@ extract_plan_field() {
     local alias
     for alias in "${aliases[@]}"; do
         local value
-        value=$(grep "^\*\*${alias}\*\*: " "$plan_file" 2>/dev/null | \
+        value=$(grep -E "^[[:space:]-]*\*\*${alias}\*\*: " "$plan_file" 2>/dev/null | \
             head -1 | \
-            sed "s|^\*\*${alias}\*\*: ||" | \
+            sed -E "s|^[[:space:]-]*\*\*${alias}\*\*: ||" | \
             sed 's/^[ \t]*//;s/[ \t]*$//' | \
             grep -v "NEEDS CLARIFICATION" | \
             grep -v "^N/A$" || true)
