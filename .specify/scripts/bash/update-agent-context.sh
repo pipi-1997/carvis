@@ -167,13 +167,42 @@ validate_environment() {
 extract_plan_field() {
     local field_pattern="$1"
     local plan_file="$2"
-    
-    grep "^\*\*${field_pattern}\*\*: " "$plan_file" 2>/dev/null | \
-        head -1 | \
-        sed "s|^\*\*${field_pattern}\*\*: ||" | \
-        sed 's/^[ \t]*//;s/[ \t]*$//' | \
-        grep -v "NEEDS CLARIFICATION" | \
-        grep -v "^N/A$" || echo ""
+
+    local aliases=("$field_pattern")
+    case "$field_pattern" in
+        "Language/Version")
+            aliases+=("语言/版本")
+            ;;
+        "Primary Dependencies")
+            aliases+=("主要依赖")
+            ;;
+        "Storage")
+            aliases+=("存储")
+            ;;
+        "Testing")
+            aliases+=("测试")
+            ;;
+        "Project Type")
+            aliases+=("项目类型")
+            ;;
+    esac
+
+    local alias
+    for alias in "${aliases[@]}"; do
+        local value
+        value=$(grep "^\*\*${alias}\*\*: " "$plan_file" 2>/dev/null | \
+            head -1 | \
+            sed "s|^\*\*${alias}\*\*: ||" | \
+            sed 's/^[ \t]*//;s/[ \t]*$//' | \
+            grep -v "NEEDS CLARIFICATION" | \
+            grep -v "^N/A$" || true)
+        if [[ -n "$value" ]]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+
+    echo ""
 }
 
 parse_plan_data() {
