@@ -18,7 +18,7 @@
 - [x] T006 [P] 保持 runtime config 与 definition sync 读取 effective definitions in `packages/core/src/config/runtime-config.ts`, `apps/gateway/src/services/trigger-definition-sync.ts`
 - [x] T007 新增 `carvis-schedule` CLI package、命令解析器、gateway client、内部上下文解析和 skill package in `packages/carvis-schedule-cli/*`, `packages/skill-schedule-cli/*`
 - [x] T007A [P] 新增统一 CLI contract 测试，覆盖共享 stdout JSON、stderr debug、exit code `0/2/3/4` 语义，以及默认从运行时自动解析 workspace/chat/session/requested-text 上下文 in `tests/unit/carvis-schedule-cli.test.ts`, `tests/contract/carvis-schedule-cli.contract.test.ts`
-- [x] T008 [P] 为 effective merge、skill/prompt policy 与 CLI-first prompt 基础逻辑补充单元测试 in `tests/unit/trigger-definition-sync.test.ts`, `tests/unit/schedule-management-prompt.test.ts`
+- [x] T008 [P] 为 effective merge、skill/prompt policy 与 CLI-first prompt 基础逻辑补充单元测试，并保持 prompt 中的命令集与实现一致 in `tests/unit/trigger-definition-sync.test.ts`, `tests/unit/schedule-management-prompt.test.ts`
 - [ ] T008A [P] (Deferred) 为 schedule tool audit 投影补充单元/契约覆盖，验证 not-invoked、gateway rejected、CLI failure 与 management success 的区分基础 in `tests/unit/run-controller.test.ts`, `tests/contract/internal-managed-schedules.contract.test.ts`
 - [x] T009 [P] 新增未绑定 workspace 的 contract / integration 覆盖，验证 CLI-first schedule capability 时仍返回 `/bind` 引导且不会写入 management action 或 definition 变更 in `tests/contract/feishu-schedule-management-binding.contract.test.ts`, `tests/integration/feishu-schedule-management-unbound.test.ts`
 - [x] T009A [P] 新增 bridge/executor 的 CLI readiness probe 测试，覆盖 `carvis-schedule` 不可执行时的 `CODEX_UNAVAILABLE` 启动失败语义 in `tests/unit/bridge-codex-cli-transport.test.ts`, `tests/integration/executor-startup.test.ts`
@@ -35,9 +35,9 @@
 
 ## Phase 4：用户故事 2 - 查询
 
-- [x] T016 [P] [US2] 新增 `carvis-schedule list` CLI 契约测试，覆盖 workspace-scoped 返回、origin 可见性、列表字段约束和 stdout/exit code 返回一致性 in `tests/contract/schedule-management-list.contract.test.ts`, `tests/contract/carvis-schedule-cli.contract.test.ts`
+- [x] T016 [P] [US2] 新增 `carvis-schedule list` CLI 契约测试，覆盖 workspace-scoped 返回、origin 可见性、列表字段约束，以及 `summary + schedules[]` 双返回契约和 stdout/exit code 返回一致性 in `tests/contract/schedule-management-list.contract.test.ts`, `tests/contract/carvis-schedule-cli.contract.test.ts`
 - [x] T017 [P] [US2] 新增当前 workspace schedule list 的 skill -> CLI -> gateway 集成测试，覆盖 `config` + `agent` definitions 同时可见 in `tests/integration/feishu-schedule-list.test.ts`
-- [x] T018 [P] [US2] 实现 effective schedule list presenter，投影 `label`、origin、enabled、`nextDueAt` 和 `lastTriggerStatus` in `apps/gateway/src/services/managed-schedule-presenter.ts`
+- [x] T018 [P] [US2] 实现 effective schedule list presenter，投影 `label`、origin、enabled、`nextDueAt`、`lastTriggerStatus`，并保留机器可读结构化列表 in `apps/gateway/src/services/managed-schedule-presenter.ts`
 - [x] T019 [US2] 实现 list path 的 service 逻辑与 management action 审计 in `apps/gateway/src/services/schedule-management-service.ts`, `packages/core/src/storage/repositories.ts`
 - [x] T020 [US2] 将 `carvis-schedule list` 的 skill policy / CLI path 接入 chat management orchestration 与内部查询 route 过滤 in `apps/gateway/src/bootstrap.ts`, `apps/gateway/src/routes/internal-managed-schedules.ts`, `packages/carvis-schedule-cli/*`
 
@@ -46,7 +46,7 @@
 - [x] T021 [P] [US3] 新增 `carvis-schedule update` CLI 契约测试，覆盖 unique match、config override、不支持时间表达拒绝和 stdout/exit code 返回一致性 in `tests/contract/schedule-management-update.contract.test.ts`, `tests/contract/carvis-schedule-cli.contract.test.ts`
 - [x] T022 [P] [US3] 新增 update 的 skill -> CLI -> gateway 集成测试，覆盖 agent/config definitions 更新、effective 读取和后续 scheduler 触发 in `tests/integration/feishu-schedule-update.test.ts`
 - [x] T023 [P] [US3] 实现 definition matcher 与目标唯一性解析 in `apps/gateway/src/services/schedule-definition-matcher.ts`, `apps/gateway/src/services/schedule-management-service.ts`
-- [x] T024 [US3] 实现 update path 的 durable override 写入、label/prompt/schedule 变更和 management action 审计 in `apps/gateway/src/services/schedule-management-service.ts`, `packages/core/src/storage/repositories.ts`
+- [x] T024 [US3] 实现 update path 的 durable override 写入、label/prompt/schedule 变更和 management action 审计，并确保 update 不会隐式重新启用 disabled definition in `apps/gateway/src/services/schedule-management-service.ts`, `packages/core/src/storage/repositories.ts`
 - [x] T025 [US3] 更新 scheduler / presenter / query logic 以读取 override 后的 effective definition，并显式展示 `config` definition 已被 Codex 修改 in `apps/gateway/src/services/trigger-definition-sync.ts`, `apps/gateway/src/services/managed-schedule-presenter.ts`, `apps/gateway/src/routes/internal-managed-schedules.ts`
 - [x] T026 [US3] 补充 `carvis-schedule update` 的结构化日志、CLI 澄清结果、CLI 失败语义、skill 最终回复与 operator-visible rejection 原因 in `packages/core/src/observability/runtime-logger.ts`, `apps/gateway/src/bootstrap.ts`, `packages/carvis-schedule-cli/*`
 
@@ -59,6 +59,15 @@
 - [x] T031 [US4] 在 managed schedule presenter 和内部查询 route 中展示 disabled 状态、最近管理动作和历史执行摘要 in `apps/gateway/src/services/managed-schedule-presenter.ts`, `apps/gateway/src/routes/internal-managed-schedules.ts`
 
 ## Phase 7：收尾
+
+## Phase 7：用户故事 5 - 重新启用
+
+- [x] T031A [P] [US5] 新增 `carvis-schedule enable` CLI 契约测试，覆盖 unique match、stdout/exit code 返回一致性，以及 enable 后 effective definition 变回 enabled in `tests/unit/carvis-schedule-cli.test.ts`, `tests/contract/carvis-schedule-cli.contract.test.ts`, `tests/contract/schedule-management-enable.contract.test.ts`
+- [x] T031B [P] [US5] 实现 enable path、唯一目标匹配与 durable enabled override 写入 in `apps/gateway/src/services/schedule-management-service.ts`, `apps/gateway/src/services/run-tool-router.ts`, `packages/core/src/domain/models.ts`
+- [x] T031C [US5] 更新 schedule skill contract、prompt policy 与 help 文案，显式暴露 `enable`，并约束恢复启用不得借道 `update` in `specs/007-agent-managed-scheduling/contracts/schedule-skill.md`, `apps/gateway/src/services/schedule-management-prompt.ts`, `packages/carvis-schedule-cli/src/index.ts`
+- [x] T031D [US5] 更新 feature spec / plan，使 `enable` 与结构化 list 返回进入 speckit 文档链路 in `specs/007-agent-managed-scheduling/spec.md`, `specs/007-agent-managed-scheduling/plan.md`, `specs/007-agent-managed-scheduling/contracts/schedule-management-service.md`, `specs/007-agent-managed-scheduling/contracts/schedule-management-tools.md`
+
+## Phase 8：收尾
 
 - [x] T032 [P] 为 definition matcher、CLI gateway client、always-on skill policy 和 schedule management orchestration 补充单元/契约测试，覆盖普通对话不误调用 CLI 与 workspace hard gate in `tests/unit/schedule-definition-matcher.test.ts`, `tests/unit/carvis-schedule-cli.test.ts`, `tests/unit/schedule-management-service.test.ts`, `tests/contract/schedule-skill.contract.test.ts`
 - [ ] T033 [P] (Deferred) 新增 management audit visibility 的 contract / integration 覆盖，验证 create/update/disable/needs_clarification 在查询面上的投影，以及未调用 schedule CLI / gateway reject / CLI failure / management success / run failure / delivery failure 的区分 in `tests/contract/internal-managed-schedules.contract.test.ts`, `tests/integration/managed-schedule-audit-visibility.test.ts`

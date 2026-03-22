@@ -19,12 +19,14 @@
 - 明确查询当前 workspace schedules 时，skill 必须调用 `carvis-schedule list`
 - 明确修改唯一目标时，skill 必须调用 `carvis-schedule update`
 - 明确停用唯一目标时，skill 必须调用 `carvis-schedule disable`
+- 明确重新启用已停用目标时，skill 必须调用 `carvis-schedule enable`
+- skill 不得把 `update` 当作隐式 re-enable 手段；恢复启用必须走显式 `enable`
 
 ## 4. 必须先澄清的情况
 
 - 当前 chat 未绑定 workspace
 - 创建请求缺少足够的时间信息、频率信息或任务描述
-- 修改或停用请求命中多个可能目标
+- 修改、停用或启用请求命中多个可能目标
 - 用户表达超出当前调度器支持范围，但无法立即判断应拒绝还是可改写
 
 ## 5. 必须拒绝或回退普通对话的情况
@@ -38,7 +40,7 @@
 - skill 在拿到 CLI result 后，必须向用户给出可读回复
 - `needs_clarification` 时，最终回复必须明确说明需要用户补充什么
 - `rejected` 时，最终回复必须解释拒绝原因和下一步可执行操作
-- `executed` 时，最终回复必须说明已创建、已更新、已停用或当前列表结果
+- `executed` 时，最终回复必须说明已创建、已更新、已停用、已启用或当前列表结果
 
 ## 7. 非目标行为
 
