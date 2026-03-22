@@ -26,6 +26,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@carvis/core": "0.1.6"
+    "@carvis/core": "0.2.0"
   }
 }

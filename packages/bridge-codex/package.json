@@ -1,6 +1,6 @@
 {
   "name": "@carvis/bridge-codex",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "Codex bridge and transport layer for the carvis runtime.",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@carvis/core": "0.1.6"
+    "@carvis/core": "0.2.0"
   },
   "exports": {
     ".": "./src/index.ts",
