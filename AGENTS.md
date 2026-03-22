@@ -118,6 +118,8 @@ tests/
 - Bun 1.3.9、TypeScript 5.9.x + Hono、Zod、`pg`、`redis`、`@larksuiteoapi/node-sdk`、Codex CLI、`launchd` / `systemd --user`、本地 Unix domain socket IPC (016-daemon-deployment)
 - Docker + Docker Compose（daemon 通过 Compose 托管 Postgres/Redis）
 - PostgreSQL、Redis、`~/.carvis` 下的 config/state/logs/install manifest/data dirs (016-daemon-deployment)
+- Bun 1.x、TypeScript 5.x + Hono、Zod、PostgreSQL client、Redis coordination、Feishu websocket / message API、Codex CLI (007-agent-managed-scheduling)
+- PostgreSQL、Redis、host-local workspaces、runtime config file (007-agent-managed-scheduling)
 
 ## Recent Changes
 - 016-daemon-deployment: Added Bun 1.3.9、TypeScript 5.9.x + Hono、Zod、`pg`、`redis`、`@larksuiteoapi/node-sdk`、Codex CLI、`launchd` / `systemd --user`、本地 Unix domain socket IPC
