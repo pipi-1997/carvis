@@ -28,7 +28,7 @@ type MutableInvocation = Partial<ScheduleToolInvocation> & {
   actionType: ScheduleToolInvocation["actionType"];
 };
 
-const ACTIONS = new Set(["create", "list", "update", "disable"]);
+const ACTIONS = new Set(["create", "list", "update", "disable", "enable"]);
 
 export function parseCarvisScheduleCommand(
   argv: string[],
@@ -39,7 +39,7 @@ export function parseCarvisScheduleCommand(
 ): ParsedCarvisScheduleCommand {
   const [actionType, ...rest] = argv;
   if (!actionType || !ACTIONS.has(actionType)) {
-    return reject("invalid_command", "用法错误：需要 create、list、update 或 disable 子命令。");
+    return reject("invalid_command", "用法错误：需要 create、list、update、disable 或 enable 子命令。");
   }
 
   const env = options.env ?? process.env;
@@ -66,6 +66,11 @@ export function parseCarvisScheduleCommand(
   assignIfPresent(invocation, "targetReference", flags["--target-reference"]);
   assignIfPresent(invocation, "definitionId", flags["--definition-id"]);
 
+  const deliveryKind = flags["--delivery-kind"];
+  if (deliveryKind && deliveryKind !== "none" && deliveryKind !== "feishu_chat") {
+    return reject("invalid_delivery_kind", `不支持的 delivery kind：${deliveryKind}。可选值：none、feishu_chat。`);
+  }
+
   const deliveryTarget = parseDeliveryTarget(flags);
   if (deliveryTarget) {
     invocation.deliveryTarget = deliveryTarget;
@@ -79,7 +84,7 @@ export function parseCarvisScheduleCommand(
     }
   }
 
-  if ((actionType === "update" || actionType === "disable") && !flags["--target-reference"] && !flags["--definition-id"]) {
+  if ((actionType === "update" || actionType === "disable" || actionType === "enable") && !flags["--target-reference"] && !flags["--definition-id"]) {
     return reject("missing_target", `${actionType} 需要 --target-reference 或 --definition-id。`);
   }
 

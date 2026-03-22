@@ -18,9 +18,10 @@ describe("runtime env wrapper script", () => {
     const result = Bun.spawnSync(
       ["./scripts/run-with-runtime-env.sh", "env"],
       {
-        cwd: "/Users/pipi/workspace/carvis",
+        cwd: process.cwd(),
         env: {
-          ...process.env,
+          PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+          HOME: process.env.HOME ?? "/tmp",
           CARVIS_RUNTIME_ENV_FILE: envFile,
           FEISHU_APP_ID: "explicit-app-id",
         },
@@ -49,9 +50,10 @@ describe("runtime env wrapper script", () => {
     const result = Bun.spawnSync(
       ["./scripts/run-with-runtime-env.sh", "env"],
       {
-        cwd: "/Users/pipi/workspace/carvis",
+        cwd: process.cwd(),
         env: {
-          ...process.env,
+          PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+          HOME: process.env.HOME ?? "/tmp",
           CARVIS_RUNTIME_ENV_FILE: envFile,
         },
       },

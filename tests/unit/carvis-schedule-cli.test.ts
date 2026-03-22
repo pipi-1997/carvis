@@ -103,11 +103,8 @@ describe("carvis-schedule cli", () => {
   });
 
   test("会把显式 flag 中的 shell 变量字面量展开成环境变量值", () => {
-    const previous = process.env.CARVIS_GATEWAY_BASE_URL;
-    process.env.CARVIS_GATEWAY_BASE_URL = "http://127.0.0.1:8787";
-
-    try {
-      const parsed = parseCarvisScheduleCommand([
+    const parsed = parseCarvisScheduleCommand(
+      [
         "list",
         "--gateway-base-url",
         "$CARVIS_GATEWAY_BASE_URL",
@@ -119,47 +116,49 @@ describe("carvis-schedule cli", () => {
         "chat-001",
         "--requested-text",
         "列出定时任务",
-      ]);
-
-      expect(parsed).toEqual({
-        ok: true,
-        command: {
-          actionType: "list",
-          gatewayBaseUrl: "http://127.0.0.1:8787",
-          workspace: "/tmp/workspaces/main",
-          sessionId: "session-001",
-          chatId: "chat-001",
-          userId: null,
-          requestedText: "列出定时任务",
-          invocation: {
-            actionType: "list",
-          },
+      ],
+      {
+        env: {
+          CARVIS_GATEWAY_BASE_URL: "http://127.0.0.1:8787",
         },
-      });
-    } finally {
-      if (previous === undefined) {
-        delete process.env.CARVIS_GATEWAY_BASE_URL;
-      } else {
-        process.env.CARVIS_GATEWAY_BASE_URL = previous;
-      }
-    }
+      },
+    );
+
+    expect(parsed).toEqual({
+      ok: true,
+      command: {
+        actionType: "list",
+        gatewayBaseUrl: "http://127.0.0.1:8787",
+        workspace: "/tmp/workspaces/main",
+        sessionId: "session-001",
+        chatId: "chat-001",
+        userId: null,
+        requestedText: "列出定时任务",
+        invocation: {
+          actionType: "list",
+        },
+      },
+    });
   });
 
-  test("解析 list update disable 命令", () => {
+  test("解析 list update disable enable 命令", () => {
     expect(
-      parseCarvisScheduleCommand([
-        "list",
-        "--gateway-base-url",
-        "http://127.0.0.1:8787",
-        "--workspace",
-        "/tmp/workspaces/main",
-        "--session-id",
-        "session-001",
-        "--chat-id",
-        "chat-001",
-        "--requested-text",
-        "列出定时任务",
-      ]),
+      parseCarvisScheduleCommand(
+        [
+          "list",
+          "--gateway-base-url",
+          "http://127.0.0.1:8787",
+          "--workspace",
+          "/tmp/workspaces/main",
+          "--session-id",
+          "session-001",
+          "--chat-id",
+          "chat-001",
+          "--requested-text",
+          "列出定时任务",
+        ],
+        { env: {} },
+      ),
     ).toEqual({
       ok: true,
       command: {
@@ -177,23 +176,26 @@ describe("carvis-schedule cli", () => {
     });
 
     expect(
-      parseCarvisScheduleCommand([
-        "update",
-        "--gateway-base-url",
-        "http://127.0.0.1:8787",
-        "--workspace",
-        "/tmp/workspaces/main",
-        "--session-id",
-        "session-001",
-        "--chat-id",
-        "chat-001",
-        "--requested-text",
-        "把日报改到 10 点",
-        "--target-reference",
-        "日报",
-        "--schedule-expr",
-        "0 10 * * *",
-      ]),
+      parseCarvisScheduleCommand(
+        [
+          "update",
+          "--gateway-base-url",
+          "http://127.0.0.1:8787",
+          "--workspace",
+          "/tmp/workspaces/main",
+          "--session-id",
+          "session-001",
+          "--chat-id",
+          "chat-001",
+          "--requested-text",
+          "把日报改到 10 点",
+          "--target-reference",
+          "日报",
+          "--schedule-expr",
+          "0 10 * * *",
+        ],
+        { env: {} },
+      ),
     ).toEqual({
       ok: true,
       command: {
@@ -213,21 +215,24 @@ describe("carvis-schedule cli", () => {
     });
 
     expect(
-      parseCarvisScheduleCommand([
-        "disable",
-        "--gateway-base-url",
-        "http://127.0.0.1:8787",
-        "--workspace",
-        "/tmp/workspaces/main",
-        "--session-id",
-        "session-001",
-        "--chat-id",
-        "chat-001",
-        "--requested-text",
-        "停用日报",
-        "--definition-id",
-        "definition-001",
-      ]),
+      parseCarvisScheduleCommand(
+        [
+          "disable",
+          "--gateway-base-url",
+          "http://127.0.0.1:8787",
+          "--workspace",
+          "/tmp/workspaces/main",
+          "--session-id",
+          "session-001",
+          "--chat-id",
+          "chat-001",
+          "--requested-text",
+          "停用日报",
+          "--definition-id",
+          "definition-001",
+        ],
+        { env: {} },
+      ),
     ).toEqual({
       ok: true,
       command: {
@@ -244,6 +249,90 @@ describe("carvis-schedule cli", () => {
         },
       },
     });
+
+    expect(
+      parseCarvisScheduleCommand(
+        [
+          "enable",
+          "--gateway-base-url",
+          "http://127.0.0.1:8787",
+          "--workspace",
+          "/tmp/workspaces/main",
+          "--session-id",
+          "session-001",
+          "--chat-id",
+          "chat-001",
+          "--requested-text",
+          "重新启用日报",
+          "--definition-id",
+          "definition-001",
+        ],
+        { env: {} },
+      ),
+    ).toEqual({
+      ok: true,
+      command: {
+        actionType: "enable",
+        gatewayBaseUrl: "http://127.0.0.1:8787",
+        workspace: "/tmp/workspaces/main",
+        sessionId: "session-001",
+        chatId: "chat-001",
+        userId: null,
+        requestedText: "重新启用日报",
+        invocation: {
+          actionType: "enable",
+          definitionId: "definition-001",
+        },
+      },
+    });
+  });
+
+  test("非法 delivery kind 会在 CLI 侧被拒绝", () => {
+    expect(
+      parseCarvisScheduleCommand(
+        [
+          "create",
+          "--workspace",
+          "/tmp/workspaces/main",
+          "--session-id",
+          "session-001",
+          "--chat-id",
+          "chat-001",
+          "--requested-text",
+          "创建日报",
+          "--label",
+          "日报",
+          "--schedule-expr",
+          "0 9 * * *",
+          "--delivery-kind",
+          "email",
+        ],
+        { env: {} },
+      ),
+    ).toEqual({
+      ok: false,
+      result: {
+        status: "rejected",
+        reason: "invalid_delivery_kind",
+        targetDefinitionId: null,
+        summary: "不支持的 delivery kind：email。可选值：none、feishu_chat。",
+      },
+    });
+  });
+
+  test("help 输出会列出 enable 与关键 flags", async () => {
+    const stdout: string[] = [];
+
+    const exitCode = await runCarvisScheduleCli(["--help"], {
+      stdout(text) {
+        stdout.push(text);
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout.join("\n")).toContain("carvis-schedule <create|list|update|disable|enable> [flags]");
+    expect(stdout.join("\n")).toContain("--delivery-kind <none|feishu_chat>");
+    expect(stdout.join("\n")).toContain("carvis-schedule enable --target-reference 日报");
   });
 
   test("stdout JSON 与 exit code 统一映射 executed needs_clarification rejected", async () => {

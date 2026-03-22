@@ -77,4 +77,63 @@ describe("run tool router", () => {
     const definitions = await repositories.triggerDefinitions.listDefinitions();
     expect(definitions[0]?.workspace).toBe("/tmp/current");
   });
+
+  test("schedule.enable 会路由到 schedule management service", async () => {
+    const repositories = createInMemoryRepositories();
+    const scheduleManagementService = createScheduleManagementService({
+      repositories,
+      now: () => new Date("2026-03-10T00:00:00.000Z"),
+    });
+    await repositories.triggerDefinitions.upsertDefinition({
+      id: "daily-report",
+      sourceType: "scheduled_job",
+      definitionOrigin: "config",
+      slug: null,
+      enabled: false,
+      workspace: "/tmp/current",
+      agentId: "codex-main",
+      label: "日报",
+      promptTemplate: "生成日报",
+      deliveryTarget: { kind: "none" },
+      scheduleExpr: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      nextDueAt: "2026-03-10T01:00:00.000Z",
+      lastTriggeredAt: null,
+      lastTriggerStatus: null,
+      lastManagedAt: null,
+      lastManagedBySessionId: null,
+      lastManagedByChatId: null,
+      lastManagementAction: null,
+      secretRef: null,
+      requiredFields: [],
+      optionalFields: [],
+      replayWindowSeconds: null,
+      definitionHash: null,
+      now: new Date("2026-03-10T00:00:00.000Z"),
+    });
+    const router = createRunToolRouter({
+      scheduleManagementService,
+      agentId: "codex-main",
+    });
+
+    const result = await router.execute({
+      toolName: "schedule.enable",
+      invocation: {
+        actionType: "enable",
+        definitionId: "daily-report",
+      },
+      workspace: "/tmp/current",
+      sessionId: "session-001",
+      chatId: "chat-001",
+      userId: "user-001",
+      requestedText: "重新启用日报",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "executed",
+        targetDefinitionId: "daily-report",
+      }),
+    );
+  });
 });

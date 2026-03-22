@@ -147,6 +147,21 @@ describe("schedule management service", () => {
     expect(result.status).toBe("executed");
     expect(result.summary).toContain("日报");
     expect(result.summary).not.toContain("其他任务");
+    expect(result).toEqual(expect.objectContaining({
+      schedules: [
+        expect.objectContaining({
+          definitionId: "daily-report",
+          label: "日报",
+          definitionOrigin: "config",
+          enabled: true,
+          scheduleExpr: "0 9 * * *",
+          timezone: "Asia/Shanghai",
+          nextDueAt: "2026-03-10T01:00:00.000Z",
+          lastTriggerStatus: null,
+          lastManagedAt: null,
+        }),
+      ],
+    }));
     expect(await repositories.scheduleManagementActions.listActions()).toEqual([
       expect.objectContaining({
         actionType: "list",
@@ -280,6 +295,141 @@ describe("schedule management service", () => {
 
     const baseline = await repositories.triggerDefinitions.getDefinitionById("daily-report");
     expect(baseline?.nextDueAt).toBe("2026-03-10T02:00:00.000Z");
+  });
+
+  test("update 不应隐式启用已停用的 schedule definition", async () => {
+    const repositories = createInMemoryRepositories();
+    const now = () => new Date("2026-03-10T00:00:00.000Z");
+    const service = createScheduleManagementService({
+      repositories,
+      now,
+    });
+
+    await repositories.triggerDefinitions.upsertDefinition({
+      id: "daily-report",
+      sourceType: "scheduled_job",
+      definitionOrigin: "config",
+      slug: null,
+      enabled: true,
+      workspace: "/tmp/workspaces/main",
+      agentId: "codex-main",
+      label: "日报",
+      promptTemplate: "生成日报",
+      deliveryTarget: { kind: "none" },
+      scheduleExpr: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      nextDueAt: "2026-03-10T01:00:00.000Z",
+      lastTriggeredAt: null,
+      lastTriggerStatus: null,
+      lastManagedAt: null,
+      lastManagedBySessionId: null,
+      lastManagedByChatId: null,
+      lastManagementAction: null,
+      secretRef: null,
+      requiredFields: [],
+      optionalFields: [],
+      replayWindowSeconds: null,
+      definitionHash: null,
+      now: now(),
+    });
+
+    await service.disable({
+      workspace: "/tmp/workspaces/main",
+      sessionId: "session-001",
+      chatId: "chat-001",
+      userId: "user-001",
+      requestedText: "停用日报",
+      invocation: {
+        actionType: "disable",
+        definitionId: "daily-report",
+      },
+    });
+
+    await service.update({
+      workspace: "/tmp/workspaces/main",
+      sessionId: "session-001",
+      chatId: "chat-001",
+      userId: "user-001",
+      requestedText: "把日报改到 10 点",
+      invocation: {
+        actionType: "update",
+        definitionId: "daily-report",
+        scheduleExpr: "0 10 * * *",
+      },
+    });
+
+    const effective = await repositories.triggerDefinitions.getEffectiveDefinitionById("daily-report");
+    expect(effective?.enabled).toBe(false);
+  });
+
+  test("enable 命中唯一目标时会写入 enabled override 并更新审计字段", async () => {
+    const repositories = createInMemoryRepositories();
+    const now = () => new Date("2026-03-10T00:00:00.000Z");
+    const service = createScheduleManagementService({
+      repositories,
+      now,
+    });
+
+    await repositories.triggerDefinitions.upsertDefinition({
+      id: "daily-report",
+      sourceType: "scheduled_job",
+      definitionOrigin: "config",
+      slug: null,
+      enabled: false,
+      workspace: "/tmp/workspaces/main",
+      agentId: "codex-main",
+      label: "日报",
+      promptTemplate: "生成日报",
+      deliveryTarget: { kind: "none" },
+      scheduleExpr: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      nextDueAt: "2026-03-10T01:00:00.000Z",
+      lastTriggeredAt: null,
+      lastTriggerStatus: null,
+      lastManagedAt: null,
+      lastManagedBySessionId: null,
+      lastManagedByChatId: null,
+      lastManagementAction: null,
+      secretRef: null,
+      requiredFields: [],
+      optionalFields: [],
+      replayWindowSeconds: null,
+      definitionHash: null,
+      now: now(),
+    });
+
+    const result = await service.enable({
+      workspace: "/tmp/workspaces/main",
+      sessionId: "session-001",
+      chatId: "chat-001",
+      userId: "user-001",
+      requestedText: "启用日报",
+      invocation: {
+        actionType: "enable",
+        definitionId: "daily-report",
+      },
+    });
+
+    expect(result).toEqual({
+      status: "executed",
+      reason: null,
+      targetDefinitionId: "daily-report",
+      summary: "已启用定时任务：日报",
+    });
+
+    const effective = await repositories.triggerDefinitions.getEffectiveDefinitionById("daily-report");
+    const baseline = await repositories.triggerDefinitions.getDefinitionById("daily-report");
+    expect(effective).toEqual(expect.objectContaining({
+      enabled: true,
+      overridden: true,
+      lastManagedBySessionId: "session-001",
+      lastManagedByChatId: "chat-001",
+    }));
+    expect(baseline).toEqual(expect.objectContaining({
+      lastManagementAction: "enable",
+      lastManagedBySessionId: "session-001",
+      lastManagedByChatId: "chat-001",
+    }));
   });
 
   test("disable 命中多个目标时返回 needs_clarification 且不会写 override", async () => {

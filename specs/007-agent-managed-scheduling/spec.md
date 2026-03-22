@@ -3,7 +3,7 @@
 **功能分支**: `007-agent-managed-scheduling`
 **创建日期**: 2026-03-10
 **状态**: 草稿
-**输入**: 用户描述："支持 Codex 在当前 chat 绑定 workspace 内根据自然语言或自然语音意图直接创建、查询、修改、取消定时任务；Carvis 需要以 `carvis-schedule` CLI 作为 agent 的执行入口，通过 skill 约束何时调用这些命令，同时保持 gateway 为唯一 durable 执行面。"
+**输入**: 用户描述："支持 Codex 在当前 chat 绑定 workspace 内根据自然语言或自然语音意图直接创建、查询、修改、停用与重新启用定时任务；Carvis 需要以 `carvis-schedule` CLI 作为 agent 的执行入口，通过 skill 约束何时调用这些命令，同时保持 gateway 为唯一 durable 执行面。"
 
 ## 系统影响 *(必填)*
 
@@ -82,6 +82,17 @@
 2. **Given** 当前 workspace 中没有任何匹配的 schedule definition，**When** 用户请求取消任务，**Then** 系统必须明确告知未找到目标，而不是修改其他 definition。
 3. **Given** 被停用的 schedule 曾经有过成功和失败执行记录，**When** 用户稍后查询定时任务列表，**Then** 系统必须显示该 definition 已停用，并保留最近结果摘要供 operator 和用户查看。
 
+---
+
+### 用户故事 5 - 重新启用已停用的定时任务（优先级：P2）
+
+作为已经停用过某个定时任务的用户，我希望直接说“重新启用日报”或“把每天巡检打开”，让 Codex 在当前 workspace 内把该 schedule 恢复为启用状态，同时不需要我手工找配置或改数据库。
+
+**验收场景**:
+
+1. **Given** 当前 workspace 中存在一个已停用的 schedule definition，**When** Codex 调用 `carvis-schedule enable`，**Then** 系统必须启用该 definition，并保留既有 trigger execution 与 run 历史。
+2. **Given** 用户对一个已停用 schedule 发起 update（改时间/改描述），**When** Codex 调用 `carvis-schedule update`，**Then** 系统不得隐式把该 schedule 启用；只有显式 `enable` 才能恢复启用。
+
 ### 边界与异常场景
 
 - 当用户所在 chat 尚未绑定 workspace 时，系统不得创建、查询、修改或取消 schedule，而必须先要求用户建立 workspace 上下文。
@@ -103,7 +114,7 @@
 - **FR-001**: System MUST 支持由 Codex 代表当前 chat 在当前绑定 workspace 内创建新的 schedule definition，并让该 definition 成为既有 scheduler 可以调度的正式自动化入口。
 - **FR-002**: System MUST 在用户表达出明确 schedule 意图时默认直接创建 schedule definition，而不是强制二次确认。
 - **FR-003**: System MUST 仅允许 Codex 在当前 chat 已绑定的 workspace 范围内创建、查询、修改或取消 schedule；v1 MUST NOT 允许通过同一聊天直接跨 workspace 管理任务。
-- **FR-004**: System MUST 提供统一的 `carvis-schedule` CLI contract，使 Codex 能执行 `create`、`list`、`update`、`disable` 这四类 schedule 管理动作；该 CLI MUST 成为 agent 侧唯一允许修改 schedule durable state 的执行入口。
+- **FR-004**: System MUST 提供统一的 `carvis-schedule` CLI contract，使 Codex 能执行 `create`、`list`、`update`、`disable`、`enable` 这几类 schedule 管理动作；该 CLI MUST 成为 agent 侧唯一允许修改 schedule durable state 的执行入口。
 - **FR-005**: System MUST 让 `carvis-schedule` CLI 仅作为 gateway 内部 schedule 管理 route 的 shell facade；CLI MUST NOT 直接写数据库、Redis、definition override 或 management action，真正业务写入 MUST 仍由 gateway 执行。
 - **FR-006**: System MUST 提供一层显式的、可安装的 schedule management skill package，用于约束 agent 在何时调用 `carvis-schedule`、何时要求澄清、何时拒绝；是否调用 CLI 的判断 MUST 由 agent 基于用户请求自主完成，而不是由 gateway 侧启发式 intent detector 预先决定是否暴露这些能力；skill MUST NOT 直接修改 schedule durable state。
 - **FR-006A**: System MUST 让 `carvis-schedule` 在普通 agent 调用路径下从当前 `Codex` 运行时自动解析 workspace、chat/session、trigger user 和原始用户请求等上下文，并由 gateway 继续做最终校验；显式 CLI flags 仅用于调试、测试或人工排障，系统 MUST NOT 要求 agent 在 prompt 中手工拼接这些运行时参数，也 MUST NOT 依赖 external `MCP` server env 作为主接线方式。
@@ -111,8 +122,9 @@
 - **FR-008**: System MUST 让用户通过自然语言或自然语音表达日常的重复时间意图，例如每日、每周、每几小时或每几分钟，并将其转成当前调度器支持的 schedule 定义；对于超出当前调度能力的表达，系统 MUST 明确拒绝。
 - **FR-009**: System MUST 在创建 schedule 时记录固定 workspace、固定任务描述、计划规则、启用状态以及来源于当前聊天的创建上下文，使后续执行和查询都能追溯来源。
 - **FR-010**: System MUST 让用户查询当前 workspace 的 schedule 列表，并返回每条 definition 的名称或描述、启用状态、下一次计划时间以及最近一次执行结果摘要。
-- **FR-011**: System MUST 在修改请求唯一匹配到当前 workspace 中某个 definition 时直接更新其 schedule 或任务描述，同时保留该 definition 的历史 trigger execution 和 run 记录。
+- **FR-011**: System MUST 在修改请求唯一匹配到当前 workspace 中某个 definition 时直接更新其 schedule 或任务描述，同时保留该 definition 的历史 trigger execution 和 run 记录；update MUST NOT 隐式启用已停用 schedule。
 - **FR-012**: System MUST 在取消请求唯一匹配到当前 workspace 中某个 definition 时停用该 definition，而不是删除其历史记录。
+- **FR-012A**: System MUST 在启用请求唯一匹配到当前 workspace 中某个 definition 时启用该 definition，而不是要求用户重新创建；启用必须 durable 化并进入 effective model。
 - **FR-013**: System MUST 在修改或取消请求匹配到多个可能 definition 时要求用户澄清目标，而不是自动猜测或批量处理。
 - **FR-014**: System MUST 在修改或取消请求没有匹配目标时明确告知未找到可操作的 schedule，而不是默默忽略或误操作其他 definition。
 - **FR-015**: System MUST 让所有由 agent 创建或更新的 schedule definition 在到达计划时点后继续复用既有 `scheduler -> trigger execution -> run -> outbound` 主链路，而不是走单独的快捷执行路径。
@@ -148,7 +160,7 @@
 
 - **ManagedScheduleDefinition**: 由配置来源或 agent 来源维护的定时任务定义，表示固定 workspace 中的一条可启用、可停用、可查询的自动化入口。
 - **ScheduleManagementAction**: 一次由当前 chat 发起的创建、查询、修改或停用动作，用于表达用户意图、管理结果和审计上下文。
-- **ScheduleCliInvocation**: agent 在 `Codex` shell 环境中对 `carvis-schedule` 发起的一次结构化命令调用，携带 `create`、`list`、`update` 或 `disable` 请求。
+- **ScheduleCliInvocation**: agent 在 `Codex` shell 环境中对 `carvis-schedule` 发起的一次结构化命令调用，携带 `create`、`list`、`update`、`disable` 或 `enable` 请求。
 - **ScheduleCliResult**: `carvis-schedule` 对一次命令调用输出的结构化结果，表达 `executed`、`needs_clarification` 或 `rejected`，并驱动后续用户反馈与 operator 审计。
 - **ScheduleManagementSkill**: 约束 agent 在自然语言或自然语音场景下何时调用 `carvis-schedule`、何时澄清、何时拒绝的策略层。
 - **ScheduleCliFacade**: Carvis 提供给 agent 的本地 `carvis-schedule` CLI，可从当前运行时自动解析上下文并调用 gateway 的内部执行面，但不持有 durable 写规则。

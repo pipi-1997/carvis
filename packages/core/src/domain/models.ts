@@ -19,7 +19,7 @@ export type TriggerExecutionStatus =
 export type ConversationSessionBindingStatus = "unbound" | "bound" | "reset" | "invalidated" | "recovered";
 export type ConversationSessionRecoveryResult = "recovered" | "failed";
 export type BridgeSessionOutcome = "created" | "continued" | "unchanged";
-export type ScheduleManagementActionType = "create" | "list" | "update" | "disable" | "config_sync";
+export type ScheduleManagementActionType = "create" | "list" | "update" | "disable" | "enable" | "config_sync";
 export type ScheduleManagementResolutionStatus = "executed" | "needs_clarification" | "rejected";
 export type MediaSourceType = "local_path" | "remote_url";
 export type MediaKind = "image" | "file" | "auto";
@@ -178,12 +178,25 @@ export interface ScheduleToolInvocation {
   deliveryTarget?: TriggerDeliveryTarget | null;
 }
 
+export interface ManagedScheduleSummary {
+  definitionId: string;
+  label: string;
+  definitionOrigin: TriggerDefinitionOrigin;
+  enabled: boolean;
+  scheduleExpr: string | null;
+  timezone: string | null;
+  nextDueAt: string | null;
+  lastTriggerStatus: TriggerExecutionStatus | null;
+  lastManagedAt: string | null;
+}
+
 export interface ScheduleToolResult {
   status: ScheduleManagementResolutionStatus;
   reason: string | null;
   question?: string | null;
   targetDefinitionId: string | null;
   summary: string;
+  schedules?: ManagedScheduleSummary[];
 }
 
 export interface MediaToolInvocation {

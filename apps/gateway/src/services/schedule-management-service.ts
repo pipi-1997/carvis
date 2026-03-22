@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   EffectiveManagedSchedule,
+  ManagedScheduleSummary,
   RepositoryBundle,
   ScheduleToolInvocation,
   ScheduleToolResult,
@@ -66,7 +67,21 @@ export function createScheduleManagementService(input: ScheduleManagementService
     return inputPrompt.invocation.promptTemplate?.trim() || inputPrompt.requestedText.trim();
   }
 
-  async function updateDefinitionAudit(definition: EffectiveManagedSchedule, action: "update" | "disable") {
+  function toManagedScheduleSummary(definition: EffectiveManagedSchedule): ManagedScheduleSummary {
+    return {
+      definitionId: definition.definitionId,
+      label: definition.label,
+      definitionOrigin: definition.definitionOrigin,
+      enabled: definition.enabled,
+      scheduleExpr: definition.scheduleExpr,
+      timezone: definition.timezone,
+      nextDueAt: definition.nextDueAt,
+      lastTriggerStatus: definition.lastTriggerStatus,
+      lastManagedAt: definition.lastManagedAt,
+    };
+  }
+
+  async function updateDefinitionAudit(definition: EffectiveManagedSchedule, action: "update" | "disable" | "enable") {
     const baseline = await input.repositories.triggerDefinitions.getDefinitionById(definition.definitionId);
     if (!baseline) {
       throw new Error(`trigger definition not found: ${definition.definitionId}`);
@@ -167,6 +182,7 @@ export function createScheduleManagementService(input: ScheduleManagementService
       requestedText: string;
     }): Promise<ScheduleToolResult> {
       const definitions = await listWorkspaceDefinitions(inputAction.workspace);
+      const schedules = definitions.map(toManagedScheduleSummary);
       const summary = definitions.length === 0
         ? "当前 workspace 没有定时任务。"
         : definitions
@@ -194,6 +210,7 @@ export function createScheduleManagementService(input: ScheduleManagementService
         reason: null,
         targetDefinitionId: null,
         summary,
+        schedules,
       };
     },
 
@@ -233,7 +250,7 @@ export function createScheduleManagementService(input: ScheduleManagementService
         definitionId: match.definition.definitionId,
         workspace: inputAction.workspace,
         label: inputAction.invocation.label ?? match.definition.label,
-        enabled: true,
+        enabled: match.definition.enabled,
         scheduleExpr: inputAction.invocation.scheduleExpr ?? match.definition.scheduleExpr,
         timezone: inputAction.invocation.timezone ?? match.definition.timezone,
         promptTemplate: inputAction.invocation.promptTemplate ?? match.definition.promptTemplate,
@@ -323,6 +340,73 @@ export function createScheduleManagementService(input: ScheduleManagementService
       await writeAction({
         ...inputAction,
         actionType: "disable",
+        resolutionStatus: "executed",
+        targetDefinitionId: match.definition.definitionId,
+        responseSummary: summary,
+      });
+      return { status: "executed", reason: null, targetDefinitionId: match.definition.definitionId, summary };
+    },
+
+    async enable(inputAction: {
+      workspace: string;
+      sessionId: string;
+      chatId: string;
+      userId: string | null;
+      requestedText: string;
+      invocation: ScheduleToolInvocation;
+    }): Promise<ScheduleToolResult> {
+      const definitions = await listWorkspaceDefinitions(inputAction.workspace);
+      const match = matcher.match({
+        definitions,
+        definitionId: inputAction.invocation.definitionId,
+        targetReference: inputAction.invocation.targetReference,
+      });
+      if (match.status === "ambiguous") {
+        const summary = "找到多个可能的定时任务，请明确说明要启用哪一个。";
+        await writeAction({ ...inputAction, actionType: "enable", resolutionStatus: "needs_clarification", reason: "ambiguous_target", responseSummary: summary });
+        return { status: "needs_clarification", reason: "ambiguous_target", question: summary, targetDefinitionId: null, summary };
+      }
+      if (match.status === "not_found") {
+        const summary = "没有找到可启用的定时任务。";
+        await writeAction({ ...inputAction, actionType: "enable", resolutionStatus: "rejected", reason: "target_not_found", responseSummary: summary });
+        return { status: "rejected", reason: "target_not_found", targetDefinitionId: null, summary };
+      }
+
+      await input.repositories.triggerDefinitionOverrides.upsertOverride({
+        definitionId: match.definition.definitionId,
+        workspace: inputAction.workspace,
+        label: match.definition.label,
+        enabled: true,
+        scheduleExpr: match.definition.scheduleExpr,
+        timezone: match.definition.timezone,
+        promptTemplate: match.definition.promptTemplate,
+        deliveryTarget: match.definition.deliveryTarget,
+        managedBySessionId: inputAction.sessionId,
+        managedByChatId: inputAction.chatId,
+        managedByUserId: inputAction.userId,
+        appliedAt: now().toISOString(),
+        now: now(),
+      });
+      if (match.definition.scheduleExpr) {
+        await input.repositories.triggerDefinitions.updateDefinitionRuntimeState({
+          definitionId: match.definition.definitionId,
+          nextDueAt: computeNextScheduledAt(
+            match.definition.scheduleExpr,
+            now(),
+            match.definition.timezone ?? null,
+          ),
+          now: now(),
+        });
+      }
+      await updateDefinitionAudit({
+        ...match.definition,
+        lastManagedBySessionId: inputAction.sessionId,
+        lastManagedByChatId: inputAction.chatId,
+      }, "enable");
+      const summary = `已启用定时任务：${match.definition.label}`;
+      await writeAction({
+        ...inputAction,
+        actionType: "enable",
         resolutionStatus: "executed",
         targetDefinitionId: match.definition.definitionId,
         responseSummary: summary,

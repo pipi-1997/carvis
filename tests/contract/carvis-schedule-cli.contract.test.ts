@@ -115,6 +115,14 @@ describe("carvis-schedule cli contract", () => {
     expect(result.exitCode).toBe(0);
     expect(String(result.stdout.summary ?? "")).toContain("daily-report");
     expect(String(result.stdout.summary ?? "")).toContain("config");
+    expect(result.stdout.schedules).toEqual([
+      expect.objectContaining({
+        definitionId: "daily-report",
+        definitionOrigin: "config",
+        enabled: true,
+        scheduleExpr: "0 9 * * *",
+      }),
+    ]);
   });
 
   test("update 命中多个目标时返回 needs_clarification + exit 2", async () => {
@@ -194,6 +202,50 @@ describe("carvis-schedule cli contract", () => {
     expect(result.stdout).toMatchObject({
       status: "rejected",
       reason: "target_not_found",
+    });
+  });
+
+  test("enable 命中唯一目标时返回 executed + exit 0", async () => {
+    const harness = createHarness({
+      triggerConfig: {
+        scheduledJobs: [
+          {
+            id: "daily-report",
+            enabled: false,
+            workspace: "main",
+            agentId: "codex-main",
+            schedule: "0 9 * * *",
+            timezone: "Asia/Shanghai",
+            promptTemplate: "生成日报",
+            delivery: { kind: "none" },
+          },
+        ],
+      },
+    });
+    await harness.triggerDefinitionSync.syncDefinitions();
+
+    const result = await executeCli(harness, [
+      "enable",
+      "--gateway-base-url",
+      "http://localhost",
+      "--workspace",
+      harness.agentConfig.workspace,
+      "--session-id",
+      "session-001",
+      "--chat-id",
+      "chat-001",
+      "--requested-text",
+      "启用日报",
+      "--definition-id",
+      "daily-report",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatchObject({
+      status: "executed",
+      reason: null,
+      targetDefinitionId: "daily-report",
+      summary: "已启用定时任务：daily-report",
     });
   });
 });

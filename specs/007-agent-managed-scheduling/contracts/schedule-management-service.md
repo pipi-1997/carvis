@@ -8,6 +8,7 @@
   - `list`
   - `update`
   - `disable`
+  - `enable`
   - workspace 作用域限制
   - definition 匹配
   - override 应用
@@ -47,11 +48,13 @@
   - `nextDueAt`
   - `lastTriggerStatus`
   - `lastManagedAt`
+- list 必须同时保留用户可读摘要与机器可读结构化结果，避免后续 presenter / tool consumer 只能解析字符串
 - list 必须基于 effective model，而不是只读 config baseline
 
 ## 5. update
 
 - update 只允许修改当前 workspace 中唯一匹配的 definition
+- update 不得隐式把已停用的 definition 重新启用；若用户要恢复启用，必须走显式 `enable`
 - 若目标是 `config` 来源 definition，服务必须写入或更新 override，而不是要求修改 runtime config 文件
 - 若目标是 `agent` 来源 definition，服务可以直接更新 definition 或统一通过 override 表达，但 operator 视图必须保持同一语义
 - update 成功后必须：
@@ -66,20 +69,27 @@
 - 对 `config` 来源 definition 的 disable 必须 durable 化，避免下次 sync 直接恢复 enabled
 - disable 成功后必须写入 `ScheduleManagementAction(executed, actionType = disable)`
 
-## 7. 歧义与拒绝
+## 7. enable
+
+- enable 只允许启用当前 workspace 中唯一匹配的 definition
+- enable 必须 durable 化，确保后续 effective model、scheduler loop 和查询面一致地观察到 enabled 状态
+- enable 成功后必须写入 `ScheduleManagementAction(executed, actionType = enable)`
+
+## 8. 歧义与拒绝
 
 - 多个候选目标时，服务必须返回 `needs_clarification`
 - 无匹配目标时，服务必须返回 `rejected` 或等价明确结果
 - 未绑定 workspace、时间表达不支持、字段缺失、字段非法或 `carvis-schedule` 调用上下文不完整时，服务必须拒绝请求
 - 被拒绝或要求澄清时，不得修改 effective definition
 
-## 8. scheduler 读取一致性
+## 9. scheduler 读取一致性
 
 - scheduler loop 与 internal presenter 必须共享同一 effective definition 读取逻辑
 - effective definition 一旦被 create/update/disable 修改，后续 scheduler tick 必须读取到最新值
 - 若 definition 已被 disable，scheduler 不得继续创建新的 `TriggerExecution`
+- definition 被 enable 后，后续 scheduler tick 必须重新读取并按最新计划时间继续调度
 
-## 9. operator 可见性
+## 10. operator 可见性
 
 - operator 查询面至少要能看出：
   - definition 来源：`config` / `agent`

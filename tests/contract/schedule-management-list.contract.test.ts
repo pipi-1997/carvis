@@ -87,7 +87,13 @@ describe("schedule management list contract", () => {
         requestedText: "我现在有哪些定时任务",
       }),
     });
-    const body = await response.json() as { result: { summary: string; status: string } };
+    const body = await response.json() as {
+      result: {
+        summary: string;
+        status: string;
+        schedules?: Array<Record<string, unknown>>;
+      };
+    };
 
     expect(response.status).toBe(200);
     expect(body.result.status).toBe("executed");
@@ -95,5 +101,23 @@ describe("schedule management list contract", () => {
     expect(body.result.summary).toContain("| last=never | 0 9 * * *");
     expect(body.result.summary).toContain("Agent 巡检 | agent | enabled | next=2026-03-10T00:30:00.000Z | last=completed | */30 * * * *");
     expect(body.result.summary).not.toContain("other-report");
+    expect(body.result.schedules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        definitionId: "daily-report",
+        label: "daily-report",
+        definitionOrigin: "config",
+        enabled: true,
+        scheduleExpr: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+      }),
+      expect.objectContaining({
+        definitionId: "agent-scan",
+        label: "Agent 巡检",
+        definitionOrigin: "agent",
+        enabled: true,
+        scheduleExpr: "*/30 * * * *",
+        lastTriggerStatus: "completed",
+      }),
+    ]));
   });
 });

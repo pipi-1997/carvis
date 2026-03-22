@@ -33,11 +33,15 @@ function createHarnessFetch(harness: ReturnType<typeof createHarness>) {
 async function executeCli(
   harness: ReturnType<typeof createHarness>,
   argv: string[],
+  options?: {
+    env?: Record<string, string | undefined>;
+  },
 ) {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const exitCode = await runCarvisMediaCli(argv, {
     fetchImpl: createHarnessFetch(harness),
+    env: options?.env,
     stdout(text) {
       stdout.push(text);
     },
@@ -67,7 +71,9 @@ describe("carvis-media cli contract", () => {
       "把图片直接发给我",
       "--path",
       `${harness.agentConfig.workspace}/output.png`,
-    ]);
+    ], {
+      env: {},
+    });
 
     expect(result.exitCode).toBe(3);
     expect(result.stdout).toMatchObject({

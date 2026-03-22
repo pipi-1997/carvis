@@ -72,6 +72,8 @@ export function createRunToolRouter(input: {
           return input.scheduleManagementService.update(normalizedInput);
         case "schedule.disable":
           return input.scheduleManagementService.disable(normalizedInput);
+        case "schedule.enable":
+          return input.scheduleManagementService.enable(normalizedInput);
         default:
           return {
             status: "rejected" as const,

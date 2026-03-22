@@ -13,6 +13,7 @@
   - `carvis-schedule list`
   - `carvis-schedule update`
   - `carvis-schedule disable`
+  - `carvis-schedule enable`
 - CLI 只是一层 shell facade，真正 durable 写入仍由 gateway 执行
 - skill 可以决定是否调用 CLI，但 skill 不得替代 CLI 执行持久化修改
 
@@ -48,7 +49,10 @@
   - `carvis-schedule update`:
     - `targetReference` 或 `definitionId`
     - 需要变更的字段集合
+    - update 不得隐式启用已停用的 schedule；启用必须通过 `carvis-schedule enable`
   - `carvis-schedule disable`:
+    - `targetReference` 或 `definitionId`
+  - `carvis-schedule enable`:
     - `targetReference` 或 `definitionId`
 
 ## 5. gateway 校验与执行
@@ -58,6 +62,7 @@
   - CLI action 必须属于允许集合
   - `scheduleExpr` 必须落入当前 scheduler 支持范围
   - `carvis-schedule update` / `carvis-schedule disable` 的目标必须在当前 workspace 内唯一匹配
+  - `carvis-schedule enable` 的目标必须在当前 workspace 内唯一匹配
   - 任何 CLI 调用都不能请求跨 workspace 管理
 - 未绑定 workspace 时，gateway 必须在执行前拒绝整个 schedule management mode，且不得写入任何 definition 变更
 - 校验失败时，gateway 必须返回结构化 CLI result，并写入 `ScheduleManagementAction(rejected)`
@@ -78,8 +83,12 @@
   - 写入或更新对应的 durable definition / override
   - 记录 `ScheduleManagementAction(executed)`
   - 返回用户可读结果摘要
+- `carvis-schedule enable` 成功后，gateway 必须：
+  - 写入 enabled override（或等价 durable 变更）
+  - 记录 `ScheduleManagementAction(executed)`
+  - 返回用户可读结果摘要
 - `carvis-schedule list` 成功后，gateway 必须：
-  - 返回当前 workspace 的 effective schedule 列表
+  - 返回当前 workspace 的 effective schedule 列表（机器可读结构 + 用户摘要）
   - 记录 `ScheduleManagementAction(executed)`
 
 ## 8. 非目标行为

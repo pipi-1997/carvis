@@ -82,14 +82,26 @@ function mapExitCode(status: "executed" | "needs_clarification" | "rejected") {
 
 function buildHelpText() {
   return [
-    "carvis-schedule <create|list|update|disable> [flags]",
+    "carvis-schedule <create|list|update|disable|enable> [flags]",
     "",
     "Runtime context is resolved internally from the current Codex session.",
     "Explicit debug flags are optional: --gateway-base-url --workspace --session-id --chat-id --requested-text --user-id",
+    "",
+    "Common flags:",
+    "  --label <text>",
+    "  --schedule-expr <cron>",
+    "  --timezone <tz>",
+    "  --prompt-template <text>",
+    "  --target-reference <text>",
+    "  --definition-id <id>",
+    "  --delivery-kind <none|feishu_chat>",
+    "  --delivery-chat-id <id>",
+    "  --delivery-label <text>",
     "",
     "Examples:",
     "  carvis-schedule list",
     "  carvis-schedule create --label 提醒 --schedule-expr '0 9 12 3 *' --prompt-template 'real chat verify'",
     "  carvis-schedule update --target-reference 日报 --schedule-expr '0 10 * * *'",
+    "  carvis-schedule enable --target-reference 日报",
   ].join("\n");
 }
