@@ -1,6 +1,6 @@
 {
   "name": "@carvis/channel-feishu",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Feishu channel adapter for the carvis runtime, including webhook normalization and runtime sender.",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@carvis/core": "0.2.1",
+    "@carvis/core": "0.2.2",
     "@larksuiteoapi/node-sdk": "^1.59.0"
   },
   "exports": {
