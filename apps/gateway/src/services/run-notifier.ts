@@ -62,6 +62,7 @@ export function createRunNotifier(input: {
     const run = await input.repositories.runs.getRunById(event.runId);
     const isChatTriggered = run?.triggerSource === "chat_message" && !!run.sessionId;
     const hasFeishuDeliveryTarget = run?.deliveryTarget?.kind === "feishu_chat" && !!run.deliveryTarget.chatId;
+    const shouldUseInteractivePresentation = isChatTriggered || run?.triggerSource === "external_webhook";
     const persistedSession =
       !session && run?.sessionId ? await input.repositories.sessions.getSessionById(run.sessionId) : null;
     const chatId = session?.chatId || persistedSession?.chatId || null;
@@ -73,24 +74,26 @@ export function createRunNotifier(input: {
       }
       const presentationSession =
         session && "id" in session ? session : persistedSession;
-      if (isChatTriggered && presentationSession) {
-        await input.presentationOrchestrator?.handleRunQueued({
-          runId: event.runId,
-          sessionId: presentationSession.id,
-          chatId: presentationSession.chatId,
-        });
-      } else if (hasFeishuDeliveryTarget && presentationChatId) {
-        await input.presentationOrchestrator?.handleRunQueued({
-          runId: event.runId,
-          sessionId: null,
-          chatId: presentationChatId,
-        });
+      if (shouldUseInteractivePresentation) {
+        if (presentationSession) {
+          await input.presentationOrchestrator?.handleRunQueued({
+            runId: event.runId,
+            sessionId: presentationSession.id,
+            chatId: presentationSession.chatId,
+          });
+        } else if (presentationChatId) {
+          await input.presentationOrchestrator?.handleRunQueued({
+            runId: event.runId,
+            sessionId: null,
+            chatId: presentationChatId,
+          });
+        }
       }
       return;
     }
 
     if (event.eventType === "run.started") {
-      if ((isChatTriggered && chatId) || (hasFeishuDeliveryTarget && presentationChatId)) {
+      if (shouldUseInteractivePresentation && (presentationChatId || chatId)) {
         await input.presentationOrchestrator?.handleRunStarted({
           runId: event.runId,
           chatId: presentationChatId ?? chatId ?? "",
@@ -101,7 +104,7 @@ export function createRunNotifier(input: {
     }
 
     if (event.eventType === "agent.output.delta") {
-      if (isChatTriggered || hasFeishuDeliveryTarget) {
+      if (shouldUseInteractivePresentation) {
         await input.presentationOrchestrator?.handleOutputDelta({
           runId: event.runId,
           sequence: Number(event.payload.sequence ?? 0),
@@ -119,7 +122,7 @@ export function createRunNotifier(input: {
       await input.adapter.removeReaction(run.triggerMessageId, WORKING_REACTION_EMOJI).catch(() => {});
     }
 
-    if ((isChatTriggered || hasFeishuDeliveryTarget) && input.presentationOrchestrator) {
+    if (shouldUseInteractivePresentation && input.presentationOrchestrator) {
       await input.presentationOrchestrator.handleTerminalEvent({
         runId: event.runId,
         terminalEvent: {
