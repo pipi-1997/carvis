@@ -58,4 +58,32 @@ describe("carvis platform service manager", () => {
     expect(writes.at(-1)?.content).toContain("[Unit]");
     expect(writes.at(-1)?.content).toContain("ExecStart=");
   });
+
+  test("darwin launchd plist 会写入 program arguments", async () => {
+    const writes: Array<{ path: string; content: string }> = [];
+    const manager = createPlatformServiceManager({
+      homeDir: "/tmp/carvis-home",
+      platform: "darwin",
+      writeFileImpl: async (path, content) => {
+        writes.push({
+          path,
+          content,
+        });
+      },
+    });
+
+    await manager.installDefinition({
+      args: ["--bun", "/tmp/carvis-home/workspace/apps/daemon/src/index.ts"],
+      daemonProgram: "/opt/homebrew/lib/node_modules/bun/bin/bun.exe",
+      env: {
+        HOME: "/tmp/carvis-home",
+      },
+      label: "com.carvis.daemon",
+      logPath: "/tmp/carvis-home/.carvis/logs/daemon.log",
+    });
+
+    expect(writes.at(-1)?.content).toContain("<string>/opt/homebrew/lib/node_modules/bun/bin/bun.exe</string>");
+    expect(writes.at(-1)?.content).toContain("<string>--bun</string>");
+    expect(writes.at(-1)?.content).toContain("<string>/tmp/carvis-home/workspace/apps/daemon/src/index.ts</string>");
+  });
 });

@@ -181,6 +181,7 @@ services:
       let service = await platformServiceManager.getStatus();
       if (service.supported) {
         const installedService = await platformServiceManager.installDefinition({
+          args: manifest.bundle.components.daemon.args,
           daemonProgram: manifest.bundle.components.daemon.program,
           env: {
             HOME: options.env?.HOME ?? process.env.HOME,

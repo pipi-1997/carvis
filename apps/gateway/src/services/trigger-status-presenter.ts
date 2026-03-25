@@ -92,7 +92,7 @@ export function createTriggerStatusPresenter(input: TriggerStatusPresenterInput)
 function projectDefinition(definition: TriggerDefinition, executions: TriggerExecution[]) {
   const relatedExecutions = executions
     .filter((execution) => execution.definitionId === definition.id)
-    .sort((left, right) => right.triggeredAt.localeCompare(left.triggeredAt));
+    .sort((left, right) => normalizeTimestamp(right.triggeredAt).localeCompare(normalizeTimestamp(left.triggeredAt)));
 
   return {
     id: definition.id,
@@ -111,7 +111,7 @@ function projectDefinition(definition: TriggerDefinition, executions: TriggerExe
     recentExecutions: relatedExecutions.slice(0, 10).map((execution) => ({
       id: execution.id,
       status: execution.status,
-      triggeredAt: execution.triggeredAt,
+      triggeredAt: normalizeTimestamp(execution.triggeredAt),
       runId: execution.runId,
       rejectionReason: execution.rejectionReason,
       failureCode: execution.failureCode ?? null,
@@ -140,7 +140,7 @@ function projectExecution(
     sourceType: execution.sourceType,
     status: execution.status,
     operatorStatus,
-    triggeredAt: execution.triggeredAt,
+    triggeredAt: normalizeTimestamp(execution.triggeredAt),
     inputDigest: execution.inputDigest,
     runId: execution.runId,
     deliveryStatus: execution.deliveryStatus,
@@ -185,4 +185,8 @@ function projectExecution(
       updatedAt: delivery.updatedAt,
     })),
   };
+}
+
+function normalizeTimestamp(value: string | Date) {
+  return value instanceof Date ? value.toISOString() : value;
 }

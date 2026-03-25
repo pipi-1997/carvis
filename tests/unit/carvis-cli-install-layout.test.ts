@@ -104,4 +104,61 @@ describe("carvis install layout", () => {
     expect(result.install.status).toBe("failed");
     expect(events).toEqual([]);
   });
+
+  test("install 会把 daemon args 透传给 service definition", async () => {
+    const home = await mkdtemp(join(tmpdir(), "carvis-install-"));
+    const serviceDefinitionInputs: Array<{
+      args?: string[];
+      daemonProgram: string;
+      env?: Record<string, string | undefined>;
+      label?: string;
+      logPath: string;
+    }> = [];
+    const installService = createInstallService({
+      env: { HOME: home },
+      platformServiceManager: {
+        async getStatus() {
+          return {
+            supported: true,
+            definitionPath: join(home, "Library", "LaunchAgents", "com.carvis.daemon.plist"),
+            enabled: false,
+            kind: "launchd_user",
+            loaded: false,
+            unitNameOrLabel: "com.carvis.daemon",
+          };
+        },
+        async installDefinition(input) {
+          serviceDefinitionInputs.push(input);
+          return {
+            definitionPath: join(home, "Library", "LaunchAgents", "com.carvis.daemon.plist"),
+            enabled: true,
+            kind: "launchd_user",
+            loaded: false,
+            unitNameOrLabel: "com.carvis.daemon",
+          };
+        },
+        async removeDefinition() {
+          return {
+            removed: false,
+            supported: true,
+          };
+        },
+      },
+      dockerEngine: {
+        async preflight() {
+          return;
+        },
+      },
+    });
+
+    await installService.run({
+      repair: true,
+    });
+
+    expect(serviceDefinitionInputs).toHaveLength(1);
+    expect(serviceDefinitionInputs[0]?.args).toEqual([
+      "--bun",
+      "/Users/pipi/workspace/carvis/apps/daemon/src/index.ts",
+    ]);
+  });
 });
