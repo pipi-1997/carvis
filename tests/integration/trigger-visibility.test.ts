@@ -3,10 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { createHarness } from "../support/harness.ts";
 
 describe("trigger visibility integration", () => {
-  test("delivery failure 与 run completed 在内部查询面分离展示", async () => {
+  test("scheduled job 的 terminal delivery failure 与 run completed 在内部查询面分离展示", async () => {
     const harness = createHarness({
-      presentation: {
-        failCardUpdate: true,
+      delivery: {
+        failSendMessage: true,
       },
       triggerConfig: {
         scheduledJobs: [
@@ -46,12 +46,13 @@ describe("trigger visibility integration", () => {
         }),
         deliveries: expect.arrayContaining([
           expect.objectContaining({
-            deliveryKind: "card_complete",
+            deliveryKind: "result",
             status: "failed",
           }),
         ]),
       }),
     );
+    expect(harness.presentationOperations).toEqual([]);
   });
 
   test("heartbeat expiry 在内部查询面可见且不依赖聊天 session", async () => {
