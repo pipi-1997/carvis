@@ -62,7 +62,9 @@ export function createRunNotifier(input: {
     const run = await input.repositories.runs.getRunById(event.runId);
     const isChatTriggered = run?.triggerSource === "chat_message" && !!run.sessionId;
     const hasFeishuDeliveryTarget = run?.deliveryTarget?.kind === "feishu_chat" && !!run.deliveryTarget.chatId;
-    const shouldUseInteractivePresentation = isChatTriggered || run?.triggerSource === "external_webhook";
+    const isFeishuScheduledTrigger = run?.triggerSource === "scheduled_job" && hasFeishuDeliveryTarget;
+    const shouldUseInteractivePresentation =
+      isChatTriggered || run?.triggerSource === "external_webhook" || isFeishuScheduledTrigger;
     const persistedSession =
       !session && run?.sessionId ? await input.repositories.sessions.getSessionById(run.sessionId) : null;
     const chatId = session?.chatId || persistedSession?.chatId || null;

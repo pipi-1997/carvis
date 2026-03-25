@@ -116,6 +116,7 @@ export function createHarness(options?: {
   presentation?: {
     failCardCreate?: boolean;
     failCardUpdate?: boolean;
+    failFallbackTerminal?: boolean;
   };
 }) {
   let currentTime = Date.parse("2026-03-08T00:00:00.000Z");
@@ -304,6 +305,9 @@ export function createHarness(options?: {
       };
     },
     async sendFallbackTerminal(input: { chatId: string; runId: string; title: string; content: string }) {
+      if (options?.presentation?.failFallbackTerminal) {
+        throw new Error("presentation fallback terminal failed");
+      }
       presentationOperations.push({
         action: "send-fallback-terminal",
         chatId: input.chatId,

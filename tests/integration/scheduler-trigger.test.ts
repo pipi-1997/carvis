@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createHarness } from "../support/harness.ts";
 
 describe("scheduler trigger integration", () => {
-  test("due scheduled job 完成后会发送一条可见的结果消息，而不是只停留在卡片链路", async () => {
+  test("due scheduled job 命中 Feishu delivery 时会走完整卡片链路", async () => {
     const harness = createHarness({
       triggerConfig: {
         scheduledJobs: [
@@ -56,14 +56,26 @@ describe("scheduler trigger integration", () => {
       lastTriggerStatus: "completed",
       nextDueAt: "2026-03-09T00:01:00.000Z",
     });
-    expect(harness.sentMessages).toEqual([
-      expect.objectContaining({
-        chatId: "ops-chat",
-        kind: "result",
-        runId: queuedRun?.id,
-      }),
-    ]);
-    expect(harness.presentationOperations).toEqual([]);
+    expect(harness.presentationOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "create-card",
+          chatId: "ops-chat",
+          runId: queuedRun?.id,
+        }),
+        expect.objectContaining({
+          action: "complete-card",
+          runId: queuedRun?.id,
+          status: "completed",
+        }),
+      ]),
+    );
+    expect(harness.sentMessages).toEqual([]);
+    expect(
+      (await harness.repositories.deliveries.listDeliveries())
+        .filter((delivery) => delivery.runId === queuedRun?.id)
+        .map((delivery) => delivery.deliveryKind),
+    ).toEqual(["card_create", "card_complete"]);
     expect(
       (await harness.repositories.deliveries.listDeliveries())
         .filter((delivery) => delivery.runId === queuedRun?.id)
